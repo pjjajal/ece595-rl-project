@@ -1,9 +1,13 @@
 # ece595-rl-project
 
 
-## environment setup
+## Environment Setup
+### Requirements:
+- conda > 23.X
+
+### Setup
 To setup the environment run the following: 
-```sh
+```bash
 # This creates the environment 
 conda env create -f environment.yml
 # Activate
