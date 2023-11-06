@@ -2,6 +2,8 @@ import torch
 from awq import AutoAWQForCausalLM
 from transformers import pipeline, AutoTokenizer, AutoModelForCausalLM
 from trl import AutoModelForCausalLMWithValueHead
+import re
+
 
 
 class Agent:
@@ -22,6 +24,8 @@ class Agent:
         )
         self.tokenizer.chat_template = "{{ bos_token }}{% for message in messages %}{% if (message['role'] == 'user') != (loop.index0 % 2 == 0) %}{{ raise_exception('Conversation roles must alternate user/assistant/user/assistant/...') }}{% endif %}{% if message['role'] == 'user' %}{{ '[INST] ' + message['content'] + ' [/INST]' }}{% elif message['role'] == 'assistant' %}{{ message['content'] + eos_token + ' ' }}{% else %}{{ raise_exception('Only user and assistant roles are supported!') }}{% endif %}{% endfor %}"
 
+        self.pattern = r"(<CMD>.*?<\/CMD>)(</s>)*"
+
         # model = AutoModelForCausalLM.from_pretrained(
         #     "mistralai/Mistral-7B-Instruct-v0.1",
         #     use_flash_attention_2=True,
@@ -29,9 +33,9 @@ class Agent:
         #     load_in_8bit=True
         # )
         # tokenizer = AutoTokenizer.from_pretrained("mistralai/Mistral-7B-Instruct-v0.1")
-        
-        # TODO Update this have objective info from the environment, etc. 
-        # Major parts of this need to be created from the environment. 
+
+        # TODO Update this have objective info from the environment, etc.
+        # Major parts of this need to be created from the environment.
         self.chat = [
             {
                 "role": "user",
@@ -83,12 +87,27 @@ class Agent:
             },
         ]
 
-        # This is the original tokenization scheme.
-        # tokens = self.tokenizer.apply_chat_template(
-        #     self.chat, add_generation_prompt=True, return_tensors="pt"
-        # ).cuda()
 
-        # This applies the chat template but then does the assistant generation after a <CMD> tag. This should cause it to generate commands.
+    def _tokenize(self, obs):
+        self.chat.append({"role": "user", "content": obs})
+        tokens = self.tokenizer.apply_chat_template(
+            self.chat, add_generation_prompt=True, tokenize=False
+        )
+        tokens = tokens + "<CMD>"
+        tokens = self.tokenizer(tokens, return_tensors="pt").input_ids.cuda()
+
+        return tokens
+
+    def _detokenize(self, generation_output, input_length):
+        decoded_outputs = self.tokenizer.batch_decode(
+            generation_output[:, input_length:], skip_special_tokens=True
+        )[0]
+        decoded_outputs = "<CMD>" + decoded_outputs
+        decoded_outputs = re.search(self.pattern, decoded_outputs).group(1)
+        self.chat.append({"role": "assistant", "content": decoded_outputs})
+        return decoded_outputs
+
+    def initial_action(self):
         tokens = self.tokenizer.apply_chat_template(
             self.chat, add_generation_prompt=True, tokenize=False
         )
@@ -104,43 +123,45 @@ class Agent:
             top_k=40,
             max_new_tokens=20,
         )
-        decoded_outputs = self.tokenizer.batch_decode(
-            generation_output[:, input_length:], skip_special_tokens=True
-        )[0]
-        decoded_outputs = "<CMD>" + decoded_outputs
-        print(decoded_outputs)
-        self.chat.append({"role": "assistant", "content": decoded_outputs})
 
-        self.chat.append({"role": "user", "content": ""})
+        decoded_outputs =  self._detokenize(generation_output, input_length)
+        # decoded_outputs = self.tokenizer.batch_decode(
+        #     generation_output[:, input_length:], skip_special_tokens=True
+        # )[0]
+        # decoded_outputs = "<CMD>" + decoded_outputs
+        # decoded_outputs = re.search(self.pattern, decoded_outputs).group(1)
+        # self.chat.append({"role": "assistant", "content": decoded_outputs})
+        return decoded_outputs
 
     def act(self, obs):
-        # prompt = self.prompt_template(obs)
-        tokens = self.tokenizer.apply_chat_template(
-            self.chat, add_generation_prompt=True, return_tensors="pt"
-        ).cuda()
+        tokens = self._tokenize(obs)
         input_length = tokens.shape[1]
         # Generate output
         generation_output = self.model.generate(
             tokens,
             do_sample=True,
-            temperature=0.3,
+            temperature=0.8,
             top_p=0.95,
             top_k=40,
             max_new_tokens=20,
         )
-
-        decoded_outputs = self.tokenizer.batch_decode(
-            generation_output[:, input_length:], skip_special_tokens=True
-        )[0]
-        print(decoded_output)
+        # decoded_outputs = self.tokenizer.batch_decode(
+        #     generation_output[:, input_length:], skip_special_tokens=True
+        # )[0]
+        # decoded_outputs = "<CMD>" + decoded_outputs
+        
+        # self.chat.append({"role": "assistant", "content": decoded_outputs})
+        # # print(decoded_outputs)
+        # print(self.chat)
+        decoded_outputs = self._detokenize(generation_output, input_length)
+        return decoded_outputs
 
 
 if __name__ == "__main__":
     agent = Agent()
 
-    # # _ = agent.act(x)
-    # # print(_)
-    # while True:
-    #     obs = input("")
-    #     action = agent.act(obs)
-    #     print(action)
+    # _ = agent.act(x)
+    # print(_)
+    while True:
+        obs = input("")
+        action = agent.act(obs)
