@@ -29,7 +29,9 @@ class Agent:
         #     load_in_8bit=True
         # )
         # tokenizer = AutoTokenizer.from_pretrained("mistralai/Mistral-7B-Instruct-v0.1")
-
+        
+        # TODO Update this have objective info from the environment, etc. 
+        # Major parts of this need to be created from the environment. 
         self.chat = [
             {
                 "role": "user",
@@ -39,6 +41,7 @@ class Agent:
                 "role": "assistant",
                 "content": "I am playing TextWorld. I will issue commands based upon the environment that you describe that are 1-3 words long. Can you provide the objective?",
             },
+            # TODO Programmatically generate this.
             {
                 "role": "user",
                 "content": """
@@ -68,6 +71,7 @@ class Agent:
                 "role": "assistant",
                 "content": "My objective is to lift the stick of butter from the restroom. Describe my environment.",
             },
+            # TODO Programmatic initial state
             {
                 "role": "user",
                 "content": """-= Restroom =-
