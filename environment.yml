@@ -4,9 +4,6 @@ channels:
   - defaults
 dependencies:
   - python=3.9
-  - pytorch=2.1.0
-  - torchaudio=2.1.0
-  - torchvision=0.16.0
   - pip
   - pip:
       - flax==0.7.4
@@ -15,3 +12,7 @@ dependencies:
       - textworld==1.5.4
       - transformers==4.34.1
       - autoawq
+      # PyTorch must be installed using pip on WSL otherwise it won't detect your GPU. Amazing.
+      - torch
+      - torchvision
+      - torchaudio
