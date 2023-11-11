@@ -4,6 +4,8 @@ from transformers import pipeline, AutoTokenizer, AutoModelForCausalLM
 from trl import AutoModelForCausalLMWithValueHead
 import re
 
+from pprint import pprint
+
 
 
 class Agent:
@@ -49,9 +51,7 @@ class Agent:
             {
                 "role": "user",
                 "content": """
-                Your objective is to lift the stick of butter from the floor of the restroom.
-
-                You have the following commands available to you:
+                Your objective is to lift the stick of butter from the floor of the restroom. You have the following commands available to you:
                     look:                describe the current room
                     goal:                print the goal of this game
                     inventory:           print player's inventory
@@ -103,7 +103,8 @@ class Agent:
             generation_output[:, input_length:], skip_special_tokens=True
         )[0]
         decoded_outputs = "<CMD>" + decoded_outputs
-        decoded_outputs = re.search(self.pattern, decoded_outputs).group(1)
+        decoded_outputs = re.search(self.pattern, decoded_outputs)
+        decoded_outputs = decoded_outputs.group(1)
         self.chat.append({"role": "assistant", "content": decoded_outputs})
         return decoded_outputs
 
@@ -111,6 +112,7 @@ class Agent:
         tokens = self.tokenizer.apply_chat_template(
             self.chat, add_generation_prompt=True, tokenize=False
         )
+        print(tokens)
         tokens = tokens + "<CMD>"
         tokens = self.tokenizer(tokens, return_tensors="pt").input_ids.cuda()
         input_length = tokens.shape[1]
@@ -118,7 +120,7 @@ class Agent:
         generation_output = self.model.generate(
             tokens,
             do_sample=True,
-            temperature=0.8,
+            temperature=0.3,
             top_p=0.95,
             top_k=40,
             max_new_tokens=20,
@@ -140,7 +142,7 @@ class Agent:
         generation_output = self.model.generate(
             tokens,
             do_sample=True,
-            temperature=0.8,
+            temperature=0.3,
             top_p=0.95,
             top_k=40,
             max_new_tokens=20,
@@ -154,6 +156,7 @@ class Agent:
         # # print(decoded_outputs)
         # print(self.chat)
         decoded_outputs = self._detokenize(generation_output, input_length)
+        # pprint(self.chat)
         return decoded_outputs
 
 
