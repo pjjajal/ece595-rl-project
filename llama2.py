@@ -41,7 +41,8 @@ class Agent:
             self.chat, add_generation_prompt=True, tokenize=False
         )
         print(tokens)
-        # tokens = tokens + "<CMD>"
+        tokens = tokens + "<CMD>"
+        print(tokens)
         tokens = self.tokenizer(tokens, return_tensors="pt").input_ids.to(self.device)
 
         return tokens

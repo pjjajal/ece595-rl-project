@@ -12,8 +12,6 @@ class Agent:
     def __init__(self) -> None:
         # AWQ models are 4-bit quantized and really bloody fast.
         model_name_or_path = "TheBloke/Mistral-7B-Instruct-v0.1-AWQ"
-        # model_name_or_path = "TheBloke/Mistral-7B-v0.1-AWQ"
-        # model_name_or_path = "mistralai/Mistral-7B-Instruct-v0.1"
 
         self.model = AutoAWQForCausalLM.from_quantized(
             model_name_or_path,
@@ -28,13 +26,6 @@ class Agent:
 
         self.pattern = r"(<CMD>.*?<\/CMD>)(</s>)*"
 
-        # model = AutoModelForCausalLM.from_pretrained(
-        #     "mistralai/Mistral-7B-Instruct-v0.1",
-        #     use_flash_attention_2=True,
-        #     device_map="auto",
-        #     load_in_8bit=True
-        # )
-        # tokenizer = AutoTokenizer.from_pretrained("mistralai/Mistral-7B-Instruct-v0.1")
 
         # TODO Update this have objective info from the environment, etc.
         # Major parts of this need to be created from the environment.
