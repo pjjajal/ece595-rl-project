@@ -129,6 +129,7 @@ class MistralAgent:
             self.chat, add_generation_prompt=True, tokenize=False
         )
         tokens = tokens + "<CMD>"
+        print("\n\n{}\n\n".format(tokens))
         tokens = self.tokenizer(tokens, return_tensors="pt").input_ids.cuda()
 
         return tokens
@@ -178,7 +179,6 @@ class MistralAgent:
         )
         decoded_outputs = self._detokenize(generation_output, input_length)
         return decoded_outputs
-
 
 class AgentFactory:
     def create(model_name) -> Agent:
