@@ -8,7 +8,6 @@ from optimum.bettertransformer import BetterTransformer
 from transformers import AutoModelForCausalLM, AutoTokenizer, pipeline
 from trl import AutoModelForCausalLMWithValueHead
 
-
 class Agent:
     def __init__(self) -> None:
         model_name_or_path = "meta-llama/Llama-2-7b-chat-hf"
