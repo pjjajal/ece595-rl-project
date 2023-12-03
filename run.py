@@ -1,5 +1,5 @@
 import warnings
-warnings.simplefilter("ignore")
+#warnings.simplefilter("ignore")
 
 import gym
 import textworld.gym
@@ -16,11 +16,11 @@ def main(args):
 
     ### Register a text-based game as a new Gym's environment.
     env_id = textworld.gym.register_game(args.game, max_episode_steps=50)
-    env = gym.make(env_id)  # Start the environment.
+    env = gym.make(env_id)
 
     ### Create Initial State, start new episode
     pattern = r"<CMD>(.*?)<\/CMD>"
-    obs, infos = env.reset() 
+    obs, info = env.reset() 
     score, moves, done = 0, 0, False
 
     ### Take the first action
@@ -28,20 +28,31 @@ def main(args):
 
     while not done:
         command = command.replace("</s>", "")
-        ### TODO: Seems to be source of regex errors
         command = re.search(pattern, command).group(1)
-        obs, score, done, infos = env.step(command)
+        obs, score, done, info = env.step(command)
+        
+        ### Normal exit conditions
         if done:
+            print("run.py: Exiting game")
             break
 
         ### Act
         command = agent.act(obs.replace("\n", ""))
-        time.sleep(1)
+        #time.sleep(1)
         input(">")
         moves += 1
+        
+        ### Check confusion after agent acts, exit early potentially
+        if agent.is_confused:
+            print("run.py: Agent confused, exiting game early")
+            break
+
+        ### Render
+        env.render()
 
     env.close()
-    print("moves: {}; score: {}".format(moves, score))
+    #print("run.py: moves {}score {}".format(moves, score))
+    print("run.py: score={}".format(score))
 
 if __name__ == "__main__":
     parser = ArgumentParser()

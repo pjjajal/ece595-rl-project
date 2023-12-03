@@ -9,6 +9,7 @@ class Agent(ABC):
         self._device = None
         self._chat = []
         self.pattern = r"(<CMD>.*?<\/CMD>)(</s>)*"
+        self.is_confused = False
 
     @abstractmethod
     def _tokenize(self, obs):
