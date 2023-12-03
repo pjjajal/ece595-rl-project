@@ -1,51 +1,58 @@
+import warnings
+#warnings.simplefilter("ignore")
+
 import gym
 import textworld.gym
 import re
 import time
+
+### Local Imports
 from agent import AgentFactory
 from argparse import ArgumentParser
 
-import warnings
-
-warnings.simplefilter("ignore")
-
-
 def main(args):
+    ### Instantiate agent
     agent = AgentFactory.create(args.model)
 
-    pattern = r"<CMD>(.*?)<\/CMD>"
-
-    # Register a text-based game as a new Gym's environment.
+    ### Register a text-based game as a new Gym's environment.
     env_id = textworld.gym.register_game(args.game, max_episode_steps=50)
-    env = gym.make(env_id)  # Start the environment.
+    env = gym.make(env_id)
 
-    obs, infos = env.reset()  # Start new episode.
-    print(obs)
-    # env.render()
-
+    ### Create Initial State, start new episode
+    pattern = r"<CMD>(.*?)<\/CMD>"
+    obs, info = env.reset() 
     score, moves, done = 0, 0, False
-    # command = agent.initial_action()
+
+    ### Take the first action
     command = agent.act(obs)
-    print(command)
+
     while not done:
         command = command.replace("</s>", "")
-        # print(command)
         command = re.search(pattern, command).group(1)
-        obs, score, done, infos = env.step(command)
+        obs, score, done, info = env.step(command)
+        
+        ### Normal exit conditions
         if done:
-            print(obs)
+            print("run.py: Exiting game")
             break
+
+        ### Act
         command = agent.act(obs.replace("\n", ""))
-        print(command)
-        time.sleep(1)
+        #time.sleep(1)
         input(">")
-        print(obs)
-        # env.render()
         moves += 1
+        
+        ### Check confusion after agent acts, exit early potentially
+        if agent.is_confused:
+            print("run.py: Agent confused, exiting game early")
+            break
+
+        ### Render
+        env.render()
 
     env.close()
-    print("moves: {}; score: {}".format(moves, score))
-
+    #print("run.py: moves {}score {}".format(moves, score))
+    print("run.py: score={}".format(score))
 
 if __name__ == "__main__":
     parser = ArgumentParser()
