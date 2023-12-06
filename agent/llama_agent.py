@@ -27,6 +27,10 @@ class LlamaAgent(Agent):
 
         # TODO Update this have objective info from the environment, etc.
         # Major parts of this need to be created from the environment.
+        self.chat = None
+        self.reset_chat()
+
+    def reset_chat(self):
         self.chat = [
             {
                 "role": "user",

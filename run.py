@@ -3,12 +3,69 @@ import warnings
 import gym
 import textworld.gym
 import re
-
-### Local Imports
-from agent import AgentFactory
+import time
+from typing import Dict, List, Tuple, Any
 from argparse import ArgumentParser
 
-def main(args):
+### Local Imports
+import argparse
+from agent.agent import Agent
+from agent import AgentFactory
+
+###
+### Run episode
+###
+def run_episode(agent : Agent, environment) -> Tuple:
+    ### Reset agent 
+    agent.reset_chat()
+
+    ### Reset environment
+    observation, info = environment.reset()
+
+    print("observation {}: {}".format("initial", observation.replace("\n", "")))
+
+    ### Hardcoded
+    pattern = r"<CMD>(.*?)<\/CMD>"
+
+    ### Data to track
+    score, moves, done = 0, 0, False
+
+    ### Take the first action
+    command = agent.act(observation)
+
+    while True:        
+        ### Increment moves!
+        moves += 1
+    
+        ### Get command from agent outputs
+        command = command.replace("</s>", "")
+        command = re.search(pattern, command).group(1)
+
+        print("command {}: {}".format(moves, command))
+
+        observation, score, done, info = environment.step(command)
+
+        print("observation {}: {}".format(moves, observation.replace("\n", "")))
+
+        ### Act
+        command = agent.act(observation.replace("\n", ""))
+        
+        ### Check confusion after agent acts, exit early potentially
+        if agent.is_confused or done:
+            break
+
+        ### Render
+        environment.render()
+    
+    ### Compute 'win' from game output
+    win = "You lost" not in observation and not agent.is_confused
+    
+    return win, score, moves, agent.is_confused
+
+###
+### Single model + Episode evaluation for one game
+###
+def main(args : argparse.Namespace):
     ### Instantiate agent
     agent = AgentFactory.create(args.model, args.llama_version)
 
@@ -16,61 +73,27 @@ def main(args):
     env_id = textworld.gym.register_game(args.game, max_episode_steps=50)
     env = gym.make(env_id, new_step_api=False)
 
-    ### Create Initial State, start new episode
-    pattern = r"<CMD>(.*?)<\/CMD>"
-    obs, info = env.reset()
+    win, score, moves, confused = run_episode(agent, env)
 
-    ### Data to track
-    score, moves, done = 0, 0, False
+    print("win: {}\nmoves: {}\nscore: {}\nconfused: {}".format(win, moves, score, confused))
 
-    ### Take the first action
-    command = agent.act(obs)
-
-    while True:
-        ### Normal exit conditions - check doneness
-        if done:
-            print("run.py: Exiting game")
-            break
-        
-        ### Get command from agent outputs
-        command = command.replace("</s>", "")
-        command = re.search(pattern, command).group(1)
-
-        ### This is bugged...
-        ### All of these fields are default values
-        ### Only 'obs' seems to be updated properly
-        #obs, score, done, info = env.step(command)
-        obs, _, _, _ = env.step(command)
-
-        ### Update doneness flag
-        if "*** The End ***" in obs:
-            score = 100
-            done = True
-
-        ### Act
-        command = agent.act(obs.replace("\n", ""))
-
-        ### Wait for user input
-        input(">")
-
-        ### Increment moves!
-        moves += 1
-        
-        ### Check confusion after agent acts, exit early potentially
-        if agent.is_confused:
-            print("run.py: Agent confused, exiting game early")
-            break
-
-        ### Render
-        env.render()
-
-    env.close()
-    print("run.py: took {} moves and got score={}".format(moves, score))
+###
+### Evaluate one episode foreach game using a single model
+###
+def test_all_main(args : argparse.Namespace):
+    pass
 
 if __name__ == "__main__":
     parser = ArgumentParser()
+    parser.add_argument("--test-all", action="store_true")
+    
     parser.add_argument("--model", type=str, default="mistral")
     parser.add_argument("--game", type=str, required=True)
     parser.add_argument("--llama-version", type=str, default="13B")
     args = parser.parse_args()
-    main(args)
+
+    ### Decide evaluation mode
+    if not args.test_all:
+        main(args)
+    else:
+        test_all_main(args)

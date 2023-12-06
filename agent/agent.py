@@ -26,3 +26,7 @@ class Agent(ABC):
     @abstractmethod
     def act(self, obs):
         pass
+
+    @abstractmethod
+    def reset_chat(self):
+        pass
