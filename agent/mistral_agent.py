@@ -7,7 +7,7 @@ from .agent import Agent
 
 class MistralAgent(Agent):
     def __init__(self) -> None:
-        # AWQ models are 4-bit quantized and really bloody fast.
+        super().__init__()
         model_name_or_path = "TheBloke/Mistral-7B-Instruct-v0.1-AWQ"
 
         self.model = AutoAWQForCausalLM.from_quantized(
@@ -30,11 +30,11 @@ class MistralAgent(Agent):
         self.chat = [
             {
                 "role": "user",
-                "content": "You are playing TextWorld. I will describe the environment. You must issue commands. Commands are of the form <CMD> [insert command] </CMD>",
+                "content": "You are playing TextWorld. I will describe the environment. You must issue commands to play the game based on my guidance. Commands are of the form <CMD> [insert command] </CMD>. If you see or notice an object, try picking it up. Otherwise, search rooms and open doors to find an object.",
             },
             {
                 "role": "assistant",
-                "content": "I am playing TextWorld. I will issue commands based upon the environment that you describe that are 1-3 words long. Can you provide the objective?",
+                "content": "I am playing TextWorld. I will issue commands based upon the environment that you describe, and I will describe my action in one sentence. Can you provide the objective?",
             },
         ]
 
@@ -44,7 +44,7 @@ class MistralAgent(Agent):
             self.chat, add_generation_prompt=True, tokenize=False
         )
         tokens = tokens + "<CMD>"
-        print("\n\n{}\n\n".format(tokens))
+        #print("\n\n{}\n\n".format(tokens))
         tokens = self.tokenizer(tokens, return_tensors="pt").input_ids.cuda()
 
         return tokens
@@ -53,16 +53,16 @@ class MistralAgent(Agent):
         decoded_outputs = self.tokenizer.batch_decode(
             generation_output[:, input_length:], skip_special_tokens=True
         )[0]
-        #print("Decoded outputs (immediate): {}".format(decoded_outputs))
         decoded_outputs = "<CMD>" + decoded_outputs
         decoded_outputs = re.search(self.pattern, decoded_outputs)
+
         ### Assertion!
         ### Handling empty output
         if(decoded_outputs is None):
             ### Update confused flag
             self.is_confused = True
 
-            ### Create an output that indicates this and try and continue
+            ### Create an output that indicates this and try and continue - or just decide to stop early in run.py
             empty_decoded_output_none_assertion = "<CMD>I am confused</CMD>"
             decoded_outputs = re.search(self.pattern, empty_decoded_output_none_assertion)
             #print("Decoded outputs (immediate): {}".format(decoded_outputs))
@@ -88,9 +88,9 @@ class MistralAgent(Agent):
             do_sample=False,
             #temperature=0.5,
             #temperature=0.0,
-            top_p=0.95,
-            top_k=40,
-            max_new_tokens=20,
+            #top_p=0.95,
+            #top_k=40,
+            max_new_tokens=32,
         )
 
         decoded_outputs = self._detokenize(generation_output, input_length)
@@ -105,9 +105,9 @@ class MistralAgent(Agent):
             do_sample=False,
             #temperature=0.6,
             #temperature=0.0,
-            top_p=0.95,
-            top_k=40,
-            max_new_tokens=20,
+            #top_p=0.95,
+            #top_k=40,
+            max_new_tokens=32,
         )
         decoded_outputs = self._detokenize(generation_output, input_length)
         return decoded_outputs

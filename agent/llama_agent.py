@@ -6,7 +6,7 @@ from transformers import AutoModelForCausalLM, AutoTokenizer, pipeline
 from .agent import Agent
 
 class LlamaAgent(Agent):
-    def __init__(self, version) -> None:
+    def __init__(self, version : str) -> None:
         super().__init__()
         model_name_or_path = f"TheBloke/Llama-2-{version}-Chat-AWQ"
 
@@ -16,6 +16,7 @@ class LlamaAgent(Agent):
             trust_remote_code=False,
             safetensors=True,
         )
+
         self.tokenizer = AutoTokenizer.from_pretrained(
             model_name_or_path, trust_remote_code=False
         )
@@ -29,11 +30,11 @@ class LlamaAgent(Agent):
         self.chat = [
             {
                 "role": "user",
-                "content": "You are playing TextWorld. I will describe the environment. You must issue commands. Commands are of the form <CMD> [insert command] </CMD>",
+                "content": "You are playing TextWorld. I will describe the environment. You must issue commands to play the game based on my guidance. Commands are of the form <CMD> [insert command] </CMD>. If you see or notice an object, try picking it up. Otherwise, search rooms and open doors to find an object.",
             },
             {
                 "role": "assistant",
-                "content": "I am playing TextWorld. I will issue commands based upon the environment that you describe that are 1-3 words long. Can you provide the objective?",
+                "content": "I am playing TextWorld. I will issue commands based upon the environment that you describe, and I will describe my action in one sentence. Can you provide the objective?",
             },
         ]
 
@@ -43,6 +44,7 @@ class LlamaAgent(Agent):
             self.chat, add_generation_prompt=True, tokenize=False
         )
         tokens = tokens + "<CMD>"
+        
         tokens = self.tokenizer(tokens, return_tensors="pt").input_ids.cuda()
 
         return tokens
@@ -53,6 +55,21 @@ class LlamaAgent(Agent):
         )[0]
         decoded_outputs = "<CMD>" + decoded_outputs
         decoded_outputs = re.search(self.pattern, decoded_outputs)
+
+        ### Assertion!
+        ### Handling empty output
+        if(decoded_outputs is None):
+            ### Update confused flag
+            self.is_confused = True
+
+            ### Create an output that indicates this and try and continue - or just decide to stop early in run.py
+            empty_decoded_output_none_assertion = "<CMD>I am confused</CMD>"
+            decoded_outputs = re.search(self.pattern, empty_decoded_output_none_assertion)
+            #print("Decoded outputs (immediate): {}".format(decoded_outputs))
+        else:
+            ### Clear confusion
+            self.is_confused = False
+
         decoded_outputs = decoded_outputs.group(1)
         self.chat.append({"role": "assistant", "content": decoded_outputs})
 
@@ -69,11 +86,11 @@ class LlamaAgent(Agent):
         # Generate output
         generation_output = self.model.generate(
             tokens,
-            do_sample=True,
-            temperature=0.5,
-            top_p=0.95,
-            top_k=40,
-            max_new_tokens=20,
+            do_sample=False,
+            #temperature=0.5,
+            #top_p=0.95,
+            #top_k=40,
+            max_new_tokens=32,
         )
 
         decoded_outputs = self._detokenize(generation_output, input_length)
@@ -85,11 +102,11 @@ class LlamaAgent(Agent):
         # Generate output
         generation_output = self.model.generate(
             tokens,
-            do_sample=True,
-            temperature=0.6,
-            top_p=0.95,
-            top_k=40,
-            max_new_tokens=20,
+            do_sample=False,
+            #temperature=0.6,
+            #top_p=0.95,
+            #top_k=40,
+            max_new_tokens=32,
         )
         decoded_outputs = self._detokenize(generation_output, input_length)
         return decoded_outputs
