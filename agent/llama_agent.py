@@ -1,6 +1,6 @@
 import re
 from awq import AutoAWQForCausalLM
-from transformers import AutoModelForCausalLM, AutoTokenizer, pipeline
+from transformers import AutoTokenizer
 
 ### Local Imports
 from .agent import Agent
@@ -83,7 +83,7 @@ class LlamaAgent(Agent):
         tokens = self.tokenizer.apply_chat_template(
             self.chat, add_generation_prompt=True, tokenize=False
         )
-        print(tokens)
+        #print(tokens)
         tokens = tokens + "<CMD>"
         tokens = self.tokenizer(tokens, return_tensors="pt").input_ids.cuda()
         input_length = tokens.shape[1]

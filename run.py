@@ -31,24 +31,31 @@ def run_episode(agent : Agent, environment) -> Tuple:
     score, moves, done = 0, 0, False
 
     ### Take the first action
-    command = agent.act(observation)
+    if not args.manual_mode:
+        command = agent.act(observation)
+    else:
+        command = input("> ")
 
     while True:        
         ### Increment moves!
         moves += 1
     
         ### Get command from agent outputs
-        command = command.replace("</s>", "")
-        command = re.search(pattern, command).group(1)
+        if not args.manual_mode:
+            command = command.replace("</s>", "")
+            command = re.search(pattern, command).group(1)
 
-        print("command {}: {}".format(moves, command))
+            print("command {}: {}".format(moves, command))
 
         observation, score, done, info = environment.step(command)
 
         print("observation {}: {}".format(moves, observation.replace("\n", "")))
 
         ### Act
-        command = agent.act(observation.replace("\n", ""))
+        if not args.manual_mode:
+            command = agent.act(observation.replace("\n", ""))
+        else:
+            command = input("> ")
         
         ### Check confusion after agent acts, exit early potentially
         if agent.is_confused or done:
@@ -86,6 +93,7 @@ def test_all_main(args : argparse.Namespace):
 if __name__ == "__main__":
     parser = ArgumentParser()
     parser.add_argument("--test-all", action="store_true")
+    parser.add_argument("--manual-mode", action="store_true")
     
     parser.add_argument("--model", type=str, default="mistral")
     parser.add_argument("--game", type=str, required=True)
