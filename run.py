@@ -22,13 +22,13 @@ def run_episode(agent : Agent, environment) -> Tuple:
     ### Reset environment
     observation, info = environment.reset()
 
-    print("observation {}: {}".format("initial", observation.replace("\n", "")))
-
     ### Hardcoded
     pattern = r"<CMD>(.*?)<\/CMD>"
 
     ### Data to track
     score, moves, done = 0, 0, False
+
+    print("observation {}: {}".format("initial", observation.replace("\n", "")))
 
     ### Take the first action
     if not args.manual_mode:
@@ -65,7 +65,7 @@ def run_episode(agent : Agent, environment) -> Tuple:
         environment.render()
     
     ### Compute 'win' from game output
-    win = "You lost" not in observation and not agent.is_confused
+    win = "You lost" not in observation and not agent.is_confused and moves < args.max_episodes
     
     return win, score, moves, agent.is_confused
 
@@ -77,7 +77,7 @@ def main(args : argparse.Namespace):
     agent = AgentFactory.create(args.model, args.llama_version)
 
     ### Register a text-based game as a new Gym's environment.
-    env_id = textworld.gym.register_game(args.game, max_episode_steps=50)
+    env_id = textworld.gym.register_game(args.game, max_episode_steps=args.max_episodes)
     env = gym.make(env_id, new_step_api=False)
 
     win, score, moves, confused = run_episode(agent, env)
@@ -94,6 +94,7 @@ if __name__ == "__main__":
     parser = ArgumentParser()
     parser.add_argument("--test-all", action="store_true")
     parser.add_argument("--manual-mode", action="store_true")
+    parser.add_argument("--max-episodes", type=int, default=32)
     
     parser.add_argument("--model", type=str, default="mistral")
     parser.add_argument("--game", type=str, required=True)

@@ -1,6 +1,8 @@
 import re
 import time
 import argparse
+from typing import Dict, List, Tuple, Any
+from argparse import ArgumentParser
 
 ### Gym / TextWorld stuff
 import gym
@@ -11,7 +13,56 @@ from trl import AutoModelForCausalLMWithValueHead, PPOConfig, PPOTrainer, create
 
 ### Local Imports
 from agent import AgentFactory
-from argparse import ArgumentParser
+from agent.agent import Agent
+
+###
+### Run episode w/ 
+###
+def run_episode(agent : Agent, environment) -> Tuple:
+    ### Reset agent 
+    agent.reset_chat()
+
+    ### Reset environment
+    observation, info = environment.reset()
+
+    ### Hardcoded
+    pattern = r"<CMD>(.*?)<\/CMD>"
+
+    ### Data to track
+    score, moves, done = 0, 0, False
+
+    print("observation {}: {}".format("initial", observation))
+
+    ### Take the first action
+    if not args.manual_mode:
+        command = agent.act(observation)
+    else:
+        command = input("> ")
+
+    while True:        
+        ### Increment moves!
+        moves += 1
+    
+        ### Get command from agent outputs
+        command = command.replace("</s>", "")
+        command = re.search(pattern, command).group(1)
+
+        observation, score, done, info = environment.step(command)
+
+        ### Act
+        command = agent.act(observation.replace("\n", ""))
+        
+        ### Check confusion after agent acts, exit early potentially
+        if agent.is_confused or done:
+            break
+
+        ### Render
+        environment.render()
+    
+    ### Compute 'win' from game output
+    win = "You lost" not in observation and not agent.is_confused
+    
+    return win, score, moves, agent.is_confused
 
 ###
 ### We don't actually care about the answer - we just want to make sure the model contains a properly formatted <CMD> tag
@@ -24,7 +75,7 @@ def reward_function(model_response : str, answer : str) -> float:
         return 0.0
     else:
         return -1.0
-    
+
 def main(args : argparse.Namespace):
     ### Instantiate agent
     agent = AgentFactory.create(args.model)
@@ -34,20 +85,17 @@ def main(args : argparse.Namespace):
     game_env = gym.make(game_env_id)
     initial_game_observation, game_env_info = game_env.reset()
 
-    ### Get the initial observation, we can use it as a prompt
-    game_goal, _, _, _ = game_env.step("goal")
-
     ### Get a TRL text environment
-    trl_text_env = TextEnvironment(
-        model=agent.model,
-        tokenizer=agent.tokenizer,
-        reward_fn=reward_function,
-        max_turns=32,
-        generation_kwargs = {
-            "do_sample" : "false",
-            "max_new_tokens" : "32",
-        }
-    )
+    # trl_text_env = TextEnvironment(
+    #     model=agent.model,
+    #     tokenizer=agent.tokenizer,
+    #     reward_fn=reward_function,
+    #     max_turns=32,
+    #     generation_kwargs = {
+    #         "do_sample" : "false",
+    #         "max_new_tokens" : "32",
+    #     }
+    # )
 
     ### Create PPO Config
     ppo_config_args = {
@@ -64,8 +112,8 @@ def main(args : argparse.Namespace):
         model=agent.model,
         ref_model=None,
         tokenizer=agent.tokenizer,
+        reward_model=reward_function,
     )
-
 
 if __name__ == "__main__":
     parser = ArgumentParser()
