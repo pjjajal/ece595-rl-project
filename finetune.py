@@ -16,14 +16,80 @@ from agent import AgentFactory
 from agent.agent import Agent
 
 ###
+### Create class for reward tracking
+###
+class EpisodicRewardTracker:
+    def __init__(self):
+        self.reward = 0
+
+    def set_reward(self, new_reward : float):
+        self.reward = new_reward
+
+    def add_reward(self, reward : float):
+        self.reward += reward
+
+    def reset(self):
+        self.reward = 0
+
+    ### Used to get around the way PPOTrainer implements a reward model
+    def __call__(self, string : str) -> float:
+        return self.reward
+
+### Helper function for tokenizing observations
+### May need to change / modify
+def tokenize_observation(agent : Agent, observation : str) -> str:
+    return agent._tokenize(observation)
+
+### Sanitization Functions
+def sanitize_observation(observation : str, enforce_alphanumeric_only : bool = False) -> str:
+    ### Replace new lines
+    sanitized_observation = observation.replace("\n", "")
+
+    ### Remove disgusting room info formatting
+    room_info_formatting_pattern = r"-=[a-zA-Z0-9_\s]*=-"
+    alphanumeric_only_pattern = r"^[\W_]+|[\W_]+$"
+    quest_move_counter_pattern = r"[0-9]*/[0-9]*"
+    #correct_sentence_pattern = r"\.[a-zA-Z0-9_]+[^$]"
+
+    ### If we found a match, replace it
+    sanitized_observation = re.sub(room_info_formatting_pattern, '', sanitized_observation)
+    sanitized_observation = re.sub(quest_move_counter_pattern, '', sanitized_observation)
+
+    ### NOTE: Should go after the other operations
+    if enforce_alphanumeric_only:
+        sanitized_observation = re.sub(alphanumeric_only_pattern, '', sanitized_observation)
+
+    ### Strip to remove any trailing spaces
+    sanitized_observation.strip()
+    
+    ### Format as a sentence (smooshed sentences will be fixed this way)
+    #sanitized_observation = re.sub(correct_sentence_pattern, r". \1", sanitized_observation)
+
+    return sanitized_observation
+
+def sanitize_response(response : str) -> str:
+    sanitized_response = response.strip() + ". "
+    return sanitized_response
+
+###
 ### Run episode w/ 
 ###
-def run_episode(agent : Agent, environment) -> Tuple:
+def run_episode(agent : Agent, environment, reward_tracker : EpisodicRewardTracker) -> Tuple:
     ### Reset agent 
     agent.reset_chat()
 
+    ### Track queries and responses (need to encode both of these eh?)
+    ### Used by PPOTrainer
+    episode_query_string = ""
+    episode_response_string = ""
+
+    ### Reset tracker
+    reward_tracker.reset()
+
     ### Reset environment
     observation, info = environment.reset()
+    observation = sanitize_observation(observation, True)
+    episode_query_string = observation
 
     ### Hardcoded
     pattern = r"<CMD>(.*?)<\/CMD>"
@@ -31,71 +97,62 @@ def run_episode(agent : Agent, environment) -> Tuple:
     ### Data to track
     score, moves, done = 0, 0, False
 
-    print("observation {}: {}".format("initial", observation))
-
     ### Take the first action
-    if not args.manual_mode:
-        command = agent.act(observation)
-    else:
-        command = input("> ")
+    response = agent.act(observation)
 
     while True:        
         ### Increment moves!
         moves += 1
     
         ### Get command from agent outputs
-        command = command.replace("</s>", "")
-        command = re.search(pattern, command).group(1)
+        response = response.replace("</s>", "")
+        response = re.search(pattern, response).group(1)
+        response = sanitize_response(response)
 
-        observation, score, done, info = environment.step(command)
+        ### Append to response list
+        episode_response_string += response
+
+        ### Let the environment act and sanitize the output
+        observation, score, done, info = environment.step(response)
+
+        ### Check this so we don't append the final observation
+        if not done:
+            observation = sanitize_observation(observation)
+            episode_query_string += observation
 
         ### Act
-        command = agent.act(observation.replace("\n", ""))
+        response = agent.act(observation)
         
         ### Check confusion after agent acts, exit early potentially
         if agent.is_confused or done:
             break
 
         ### Render
-        environment.render()
+        ### environment.render()
     
     ### Compute 'win' from game output
-    win = "You lost" not in observation and not agent.is_confused
-    
-    return win, score, moves, agent.is_confused
+    win = "You lost" not in observation and not agent.is_confused and moves < 32
 
-###
-### We don't actually care about the answer - we just want to make sure the model contains a properly formatted <CMD> tag
-###
-def reward_function(model_response : str, answer : str) -> float:
-    pattern = r"</CMD>"
-    cmd_exists = re.search(pattern, model_response) is not None
-
-    if cmd_exists:
-        return 0.0
+    ### Compute reward based on win and score
+    if win:
+        reward = score
     else:
-        return -1.0
+        reward = score - 10.0
+
+    ### Update reward tracker
+    reward_tracker.set_reward(reward)
+
+    ### Last thing - strip last space (if it exists)
+    ### Return info
+    return episode_query_string.strip(), episode_response_string.strip()
 
 def main(args : argparse.Namespace):
     ### Instantiate agent
-    agent = AgentFactory.create(args.model)
+    agent = AgentFactory.create(args.model, args.llama_version)
 
     ### Register a text-based game as a new Gym's environment.
-    game_env_id = textworld.gym.register_game(args.game, max_episode_steps=50)
+    game_env_id = textworld.gym.register_game(args.game, max_episode_steps=32)
     game_env = gym.make(game_env_id)
-    initial_game_observation, game_env_info = game_env.reset()
-
-    ### Get a TRL text environment
-    # trl_text_env = TextEnvironment(
-    #     model=agent.model,
-    #     tokenizer=agent.tokenizer,
-    #     reward_fn=reward_function,
-    #     max_turns=32,
-    #     generation_kwargs = {
-    #         "do_sample" : "false",
-    #         "max_new_tokens" : "32",
-    #     }
-    # )
 
     ### Create PPO Config
     ppo_config_args = {
@@ -103,21 +160,33 @@ def main(args : argparse.Namespace):
         "learning_rate" : 1e-5,
     }
 
+    ### Generation kwargs
+    generation_kwargs = {"do_sample" : True, "top_p" : 0.95, "top_k" : 32, "temperature" : 0.50, "max_new_tokens" : 32}
+
     ### Config
     ppo_config = PPOConfig(**ppo_config_args)
 
+    ### Instantiate a reward trakcer
+    reward_tracker = EpisodicRewardTracker()
+
     ### Create PPO Trainer
-    ppo_trainer = PPOTrainer(
-        config=ppo_config, 
-        model=agent.model,
-        ref_model=None,
-        tokenizer=agent.tokenizer,
-        reward_model=reward_function,
-    )
+    # ppo_trainer = PPOTrainer(
+    #     config=ppo_config,
+    #     model=agent.model,
+    #     ref_model=None,
+    #     tokenizer=agent.tokenizer,
+    #     reward_model=reward_tracker,
+        
+    # )
+
+    episode_query_string, episode_response_string = run_episode(agent, game_env, reward_tracker)
+
+    print("Reward: {}\nEpisode Query: {}\nEpisode Response: {}".format(reward_tracker.reward, episode_query_string, episode_response_string))
 
 if __name__ == "__main__":
     parser = ArgumentParser()
     parser.add_argument("--model", default="mistral")
     parser.add_argument("--game", required=True)
+    parser.add_argument("--llama-version", type=str, default="13B")
     args = parser.parse_args()
     main(args)

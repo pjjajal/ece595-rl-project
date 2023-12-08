@@ -4,10 +4,10 @@ class Agent(ABC):
     def __init__(
         self,
     ) -> None:
-        self._model = None
-        self._tokenizer = None
-        self._device = None
-        self._chat = []
+        self.model = None
+        self.tokenizer = None
+        self.device = None
+        self.chat = []
         self.pattern = r"(<CMD>.*?<\/CMD>)(</s>)*"
         self.is_confused = False
 
