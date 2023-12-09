@@ -51,7 +51,7 @@ class LlamaAgent(Agent):
             device_map="auto",
             # trust_remote_code=False,
             # revision="main",
-            load_in_8bit=True,
+            load_in_4bit=True,
             peft_config=lora_config,
             ### Value Head
             v_head_init_strategy=None,
