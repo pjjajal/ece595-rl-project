@@ -111,13 +111,16 @@ def run_episode(agent : Agent, environment, ppo_trainer : PPOTrainer, generation
 def main(args : argparse.Namespace):
     ### Instantiate agent
     agent = AgentFactory.create(args.model, args.llama_version)
+    # ref_agent = AgentFactory.create(args.model, args.llama_version)
 
     ### Register a text-based game as a new Gym's environment.
     game_env_id = textworld.gym.register_game(args.game, max_episode_steps=args.max_episode_steps)
     game_env = gym.make(game_env_id)
 
-    ### Generation kwargs
-    generation_kwargs = {"do_sample" : True, "top_k" : 0.0, "top_p" : 1.0, "max_new_tokens" : 32, "pad_token_id" : agent.tokenizer.eos_token_id}
+    generation_kwargs = {"do_sample" : True, "top_k" : 0.0, "top_p" : 1.0, "max_new_tokens" : 32, "min_length" : -1, "pad_token_id" : agent.tokenizer.eos_token_id, "temperature" : 0.99}
+
+    ### Generation kwargs "Works", but get NaN
+    # generation_kwargs = {"do_sample" : True, "top_k" : 0.0, "top_p" : 1.0, "max_new_tokens" : 32, "pad_token_id" : agent.tokenizer.eos_token_id}
 
     ### "Works", but get NaN
     #generation_kwargs = {"do_sample" : True, "top_k" : 16, "top_p" : 0.50, "max_new_tokens" : 32, "pad_token_id" : agent.tokenizer.pad_token_id, "temperature" : 1.0, "remove_invalid_values" : True}
@@ -127,22 +130,14 @@ def main(args : argparse.Namespace):
 
     ### Config
     ppo_config = PPOConfig(
-        model_name=agent.model_name,
-        log_with=None,
-        learning_rate=1e-8,
+        learning_rate=1e-5,
         batch_size=1,
         mini_batch_size=1,
-        gradient_accumulation_steps=1,
-        optimize_device_cache=True,
-        seed=37,
-        use_score_scaling=False,
-        use_score_norm=False,
-        score_clip=False,
-        max_grad_norm=1.0,
+        #max_grad_norm=0.01,
         ### Experimental
-        kl_penalty='mse',
-        steps=1024,
-        ppo_epochs=1,
+        #kl_penalty='kl',
+        #steps=1024,
+        #ppo_epochs=1,
     )
 
     ### Create PPO Trainer
@@ -150,11 +145,12 @@ def main(args : argparse.Namespace):
         config=ppo_config,
         model=agent.model,
         ref_model=None,
-        tokenizer=agent.tokenizer,
+        num_shared_layers=None,
+        tokenizer=agent.tokenizer
     )
 
     ### Epochs
-    for e in range(4):
+    for e in range(1):
         batch = {
             "input_ids" : [],
             "responses_decoded" : [],

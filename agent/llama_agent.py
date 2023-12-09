@@ -27,20 +27,6 @@ class LlamaAgent(Agent):
 
         print(f"llama_agent.py: Instantiating model: {model_name_or_path}")
 
-        ### NOTE: Cannot use on quant models already
-        # lora_config = LoraConfig(
-        #     r=16,
-        #     lora_alpha=32,
-        #     lora_dropout=0.05,
-        #     bias="none",
-        #     task_type="CAUSAL_LM",
-        # )
-        
-        ### NOTE: Cannot quant GPTQ model
-        # nf4_config = BitsAndBytesConfig(
-        #     load_in_4bit=True, bnb_4bit_quant_type="nf4", bnb_4bit_use_double_quant=True, bnb_4bit_compute_dtype=torch.bfloat16
-        # )
-
         if model_postfix == "Chat-AWQ":
             self.model = AutoModelForCausalLM.from_quantized(
                 model_name_or_path,
@@ -49,26 +35,28 @@ class LlamaAgent(Agent):
                 safetensors=True,
             )
         elif model_postfix == "Chat-GPTQ":
-            self.model = AutoModelForCausalLM.from_pretrained(
+            self.model = AutoModelForCausalLMWithValueHead.from_pretrained(
                 ### fromPretrained Args
                 model_name_or_path,
                 device_map="auto",
                 trust_remote_code=False,
                 revision="main",
+                ### Value Head
+                v_head_init_strategy=None,
+                v_head_initializer_range=0.2,
+                summary_dropout_prob=None
             )
 
         ###
         ### NOTE: This needs to not be done if we are loading a pre-trained model
         ### Required for training: Add a value head to the model as well
         ###
-        self.model = AutoModelForCausalLMWithValueHead(
-            pretrained_model=self.model,
-            v_head_init_strategy="normal",
-            v_head_initializer_range=0.2,
-            summary_dropout_prob=None
-        )
-
-        # print(f"Model v_head: {self.model.v_head}")
+        # self.model = AutoModelForCausalLMWithValueHead(
+        #     pretrained_model=self.model,
+        #     v_head_init_strategy="normal",
+        #     v_head_initializer_range=0.2,
+        #     summary_dropout_prob=None
+        # )
 
         ### NOTE: Note sure if this is proper
         self.model.is_peft_model = False if not hasattr(self.model, "is_peft_model") else self.model.is_peft_model

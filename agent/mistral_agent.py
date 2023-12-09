@@ -11,13 +11,17 @@ import torch
 from .agent import Agent
 
 class MistralAgent(Agent):
-    def __init__(self, version : str = "7B", model_postfix : str = "Instruct-v0.1-GPTQ") -> None:
+    def __init__(self, version : str = "7B") -> None:
+        model_postfix : str = "Instruct-v0.1-GPTQ"
+
         ### Validate
-        if model_postfix not in ["Instruct-v0.1-AWQ", "Instruct-v0.1-GPTQ"]:
+        if model_postfix not in ["Instruct-v0.1-AWQ", "Instruct-v0.1-GPTQ", "Instruct-v0.1"]:
             raise ValueError("llama_agent.py: model_postfix is invalid")
 
         super().__init__()
+        
         model_name_or_path = f"TheBloke/Mistral-{version}-{model_postfix}"
+        #model_name_or_path = f"mistralai/Mistral-{version}-{model_postfix}"
 
         ### Save model name
         self.model_name = model_name_or_path
@@ -43,13 +47,26 @@ class MistralAgent(Agent):
                 trust_remote_code=False,
                 revision="main"
             )
+
+        elif model_postfix == "Instruct-v0.1":
+            self.model = AutoModelForCausalLM.from_pretrained(
+                model_name_or_path,
+                device_map="auto",
+                trust_remote_code=False,
+                revision="main"
+            )     
         
         ###
         ### NOTE: This needs to not be done if we are loading a pre-trained model
         ### Required for training: Add a value head to the model as well
         ###
-        self.model = AutoModelForCausalLMWithValueHead(self.model)
-
+        self.model = AutoModelForCausalLMWithValueHead(
+            pretrained_model=self.model,
+            v_head_init_strategy="normal",
+            v_head_initializer_range=0.2,
+            summary_dropout_prob=None
+        )
+        
         ### NOTE: Note sure if this is proper
         self.model.is_peft_model = False if not hasattr(self.model, "is_peft_model") else self.model.is_peft_model
 
@@ -91,7 +108,7 @@ class MistralAgent(Agent):
             self.chat, add_generation_prompt=True, tokenize=False
         )
         tokens = tokens + "<CMD>"
-        #print("\n\n{}\n\n".format(tokens))
+        
         tokens = self.tokenizer(tokens, return_tensors="pt").input_ids.cuda()
 
         return tokens
@@ -119,24 +136,22 @@ class MistralAgent(Agent):
 
         decoded_outputs = decoded_outputs.group(1)
         self.chat.append({"role": "assistant", "content": decoded_outputs})
+
         return decoded_outputs
 
-    def act(self, obs : str, ppo_trainer : PPOTrainer = None, ppo_trainer_generate_kwargs : Dict = None) -> Tuple:
+    def act(self, obs : str, generate_kwargs : Dict, ppo_trainer : PPOTrainer = None) -> Tuple:
         tokens = self._tokenize(obs)
         input_length = tokens.shape[1]
 
         ### Generate output
         if ppo_trainer is None:
-            generation_output = self.model.generate(
-                tokens,
-                do_sample=True,
-                top_p=1.0,
-                top_k=0,
-                max_new_tokens=32,
-            )
+            generation_output = self.model.generate(tokens, **generate_kwargs)
         ### Use PPOTrainer
         else:
-            generation_output = ppo_trainer.generate(tokens.squeeze(), generate_ref_response=False, return_prompt=False, **ppo_trainer_generate_kwargs)
+            ### VERY IMPORTANT
+            ### Truncate generated output to input_length to get the 'new' generated content only
+            ### This makes it so the generation_output corresponds exactly to the decoded_outputs (see dtokeinze above for the slicing behavior of generation_output)
+            generation_output = ppo_trainer.generate(tokens.squeeze(), **generate_kwargs)
 
         decoded_outputs = self._detokenize(generation_output, input_length)
-        return generation_output, decoded_outputs
+        return generation_output[:, input_length:], decoded_outputs
