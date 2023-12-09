@@ -4,6 +4,7 @@ class Agent(ABC):
     def __init__(
         self,
     ) -> None:
+        self.model_name = None
         self.model = None
         self.tokenizer = None
         self.device = None

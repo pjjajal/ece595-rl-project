@@ -1,28 +1,65 @@
 import re
 from awq import AutoAWQForCausalLM
-from transformers import AutoTokenizer
+from transformers import AutoTokenizer, AutoModelForCausalLM
+
+### TRL
+import trl
+from trl import AutoModelForCausalLMWithValueHead
 
 ### Local Imports
 from .agent import Agent
 
 class LlamaAgent(Agent):
-    def __init__(self, version : str) -> None:
+    def __init__(self, version : str = "7B", model_postfix : str = "Chat-GPTQ") -> None:
+        ### Validate
+        if model_postfix not in ['Chat-AWQ', 'Chat-GPTQ']:
+            raise ValueError("llama_agent.py: model_postfix is invalid")
+    
         super().__init__()
-        model_name_or_path = f"TheBloke/Llama-2-{version}-Chat-AWQ"
+        model_name_or_path = f"TheBloke/Llama-2-{version}-{model_postfix}"
 
-        self.model = AutoAWQForCausalLM.from_quantized(
-            model_name_or_path,
-            fuse_layers=True,
-            trust_remote_code=False,
-            safetensors=True,
-        )
+        ### Save model name
+        self.model_name = model_name_or_path
 
+        print(f"llama_agent.py: Instantiating model: {model_name_or_path}")
+
+        if model_postfix == "Chat-AWQ":
+            self.model = AutoAWQForCausalLM.from_quantized(
+                model_name_or_path,
+                fuse_layers=True,
+                trust_remote_code=False,
+                safetensors=True,
+            )
+        elif model_postfix == "Chat-GPTQ":
+            self.model = AutoModelForCausalLM.from_pretrained(
+                model_name_or_path,
+                device_map="auto",
+                trust_remote_code=False,
+                revision="main"
+            )
+
+        ###
+        ### NOTE: This needs to not be done if we are loading a pre-trained model
+        ### Required for training: Add a value head to the model as well
+        ###
+        self.model = AutoModelForCausalLMWithValueHead(self.model)
+
+        ### NOTE: Note sure if this is proper
+        self.model.is_peft_model = False if not hasattr(self.model, "is_peft_model") else self.model.is_peft_model
+
+        ###
+        ### Get tokenizer
+        ###
         self.tokenizer = AutoTokenizer.from_pretrained(
             model_name_or_path, trust_remote_code=False
         )
 
-        self.tokenizer.chat_template = "{{ bos_token }}{% for message in messages %}{% if (message['role'] == 'user') != (loop.index0 % 2 == 0) %}{{ raise_exception('Conversation roles must alternate user/assistant/user/assistant/...') }}{% endif %}{% if message['role'] == 'user' %}{{ '[INST] ' + message['content'] + ' [/INST]' }}{% elif message['role'] == 'assistant' %}{{ message['content'] + eos_token + ' ' }}{% else %}{{ raise_exception('Only user and assistant roles are supported!') }}{% endif %}{% endfor %}"
+        ### MANUALLY SET PAD TOKEN
+        ### NOTE: I am not sure if this is proper
+        self.tokenizer.pad_token = self.tokenizer.eos_token
 
+        ### This stuff is fine. Should be left alone here
+        self.tokenizer.chat_template = "{{ bos_token }}{% for message in messages %}{% if (message['role'] == 'user') != (loop.index0 % 2 == 0) %}{{ raise_exception('Conversation roles must alternate user/assistant/user/assistant/...') }}{% endif %}{% if message['role'] == 'user' %}{{ '[INST] ' + message['content'] + ' [/INST]' }}{% elif message['role'] == 'assistant' %}{{ message['content'] + eos_token + ' ' }}{% else %}{{ raise_exception('Only user and assistant roles are supported!') }}{% endif %}{% endfor %}"
         self.pattern = r"(<CMD>.*?<\/CMD>)(</s>)*"
 
         # TODO Update this have objective info from the environment, etc.
@@ -94,7 +131,7 @@ class LlamaAgent(Agent):
             #temperature=0.5,
             #top_p=0.95,
             #top_k=40,
-            max_new_tokens=32,
+            max_new_tokens=1024,
         )
 
         decoded_outputs = self._detokenize(generation_output, input_length)
@@ -110,7 +147,7 @@ class LlamaAgent(Agent):
             #temperature=0.6,
             #top_p=0.95,
             #top_k=40,
-            max_new_tokens=32,
+            max_new_tokens=1024,
         )
         decoded_outputs = self._detokenize(generation_output, input_length)
         return decoded_outputs

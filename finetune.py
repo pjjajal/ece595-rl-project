@@ -8,89 +8,47 @@ from argparse import ArgumentParser
 import gym
 import textworld.gym
 
+### Torch
+import torch
+
+### Progress Bar!
+from tqdm import tqdm
+
 ### TRL
 from trl import AutoModelForCausalLMWithValueHead, PPOConfig, PPOTrainer, create_reference_model, set_seed, TextEnvironment
 
 ### Local Imports
 from agent import AgentFactory
 from agent.agent import Agent
-
-###
-### Create class for reward tracking
-###
-class EpisodicRewardTracker:
-    def __init__(self):
-        self.reward = 0
-
-    def set_reward(self, new_reward : float):
-        self.reward = new_reward
-
-    def add_reward(self, reward : float):
-        self.reward += reward
-
-    def reset(self):
-        self.reward = 0
-
-    ### Used to get around the way PPOTrainer implements a reward model
-    def __call__(self, string : str) -> float:
-        return self.reward
+from utils import sanitize_observation, sanitize_response
 
 ### Helper function for tokenizing observations
 ### May need to change / modify
-def tokenize_observation(agent : Agent, observation : str) -> str:
-    return agent._tokenize(observation)
-
-### Sanitization Functions
-def sanitize_observation(observation : str, enforce_alphanumeric_only : bool = False) -> str:
-    ### Remove disgusting room info formatting
-    room_info_formatting_pattern = r"-=[a-zA-Z0-9_\s]*=-"
-    alphanumeric_only_pattern = r"^[\W_]+|[\W_]+$"
-    quest_move_counter_pattern = r"[0-9]*/[0-9]*"
-    carat_removal_pattern = r"\>"
-    multiple_newline_reduce = r"\n+"
-    #correct_sentence_pattern = r"\.[a-zA-Z0-9_]+[^$]"
-
-    ### Replace multiple new lines with a single newline
-    sanitized_observation = observation
-
-    ### Pattern matching fun
-    sanitized_observation = re.sub(room_info_formatting_pattern, '', sanitized_observation)
-    sanitized_observation = re.sub(quest_move_counter_pattern, '', sanitized_observation)
-    sanitized_observation = re.sub(carat_removal_pattern, '', sanitized_observation)
-    sanitized_observation = re.sub(multiple_newline_reduce, ' ', sanitized_observation)
-
-    ### NOTE: Should go after the other operations
-    if enforce_alphanumeric_only:
-        sanitized_observation = re.sub(alphanumeric_only_pattern, '', sanitized_observation)
-
-    ### Strip to remove any trailing spaces
-    sanitized_observation = sanitized_observation.strip()
-
-    return sanitized_observation
-
-def sanitize_response(response : str) -> str:
-    sanitized_response = response.strip() + ". "
-    return sanitized_response
+def tokenize_observation(agent : Agent, observation : str) -> Any:
+    return agent.tokenizer(observation, return_tensors="pt").input_ids.cuda()
 
 ###
 ### Run episode w/ 
 ###
-def run_episode(agent : Agent, environment, reward_tracker : EpisodicRewardTracker) -> Tuple:
+def run_episode(agent : Agent, environment, ppo_trainer : PPOTrainer) -> Tuple:
     ### Reset agent 
     agent.reset_chat()
 
     ### Track queries and responses (need to encode both of these eh?)
-    ### Used by PPOTrainer
+    ### Used for our visualization
     episode_query_string = ""
     episode_response_string = ""
 
-    ### Reset tracker
-    reward_tracker.reset()
+    episode_query_tensor_list = []
+    episode_response_tensor_list = []
 
     ### Reset environment
     observation, info = environment.reset()
-    observation = sanitize_observation(observation, True)
+    observation = sanitize_observation(observation, False)
+
+    ### Record as string and tensor
     episode_query_string = observation
+    episode_query_tensor_list.append( tokenize_observation(agent, observation) )
 
     ### Hardcoded
     pattern = r"<CMD>(.*?)<\/CMD>"
@@ -101,7 +59,7 @@ def run_episode(agent : Agent, environment, reward_tracker : EpisodicRewardTrack
     ### Take the first action
     response = agent.act(observation)
 
-    while True:        
+    while True:
         ### Increment moves!
         moves += 1
     
@@ -112,6 +70,7 @@ def run_episode(agent : Agent, environment, reward_tracker : EpisodicRewardTrack
 
         ### Append to response list
         episode_response_string += response
+        episode_response_tensor_list.append( tokenize_observation(agent, observation) )
 
         ### Let the environment act and sanitize the output
         observation, score, done, info = environment.step(response)
@@ -120,6 +79,7 @@ def run_episode(agent : Agent, environment, reward_tracker : EpisodicRewardTrack
         if not done:
             observation = sanitize_observation(observation)
             episode_query_string += observation
+            episode_query_tensor_list.append( tokenize_observation(agent, observation) )
 
         ### Act
         response = agent.act(observation)
@@ -140,12 +100,14 @@ def run_episode(agent : Agent, environment, reward_tracker : EpisodicRewardTrack
     else:
         reward = score - 10.0
 
-    ### Update reward tracker
-    reward_tracker.set_reward(reward)
+    ### Last thing - strip last space (if it exists) for printing
+    episode_query_string = episode_query_string.strip()
+    episode_response_string = episode_response_string.strip()
 
-    ### Last thing - strip last space (if it exists)
+    print("Reward: {}\nEpisode Query: {}\nEpisode Response: {}".format(reward, episode_query_string, episode_response_string))
+
     ### Return info
-    return episode_query_string.strip(), episode_response_string.strip()
+    return episode_query_tensor_list, episode_response_tensor_list, [torch.tensor(data=[reward])]
 
 def main(args : argparse.Namespace):
     ### Instantiate agent
@@ -158,31 +120,33 @@ def main(args : argparse.Namespace):
     ### Create PPO Config
     ppo_config_args = {
         "batch_size" : 1,
-        "learning_rate" : 1e-5,
+        "learning_rate" : 1.5e-5,
     }
 
     ### Generation kwargs
-    generation_kwargs = {"do_sample" : True, "top_p" : 0.95, "top_k" : 32, "temperature" : 0.50, "max_new_tokens" : 32}
+    # generation_kwargs = {"do_sample" : True, "top_p" : 0.95, "top_k" : 32, "temperature" : 0.50, "max_new_tokens" : 32}
 
     ### Config
     ppo_config = PPOConfig(**ppo_config_args)
 
-    ### Instantiate a reward trakcer
-    reward_tracker = EpisodicRewardTracker()
-
     ### Create PPO Trainer
-    # ppo_trainer = PPOTrainer(
-    #     config=ppo_config,
-    #     model=agent.model,
-    #     ref_model=None,
-    #     tokenizer=agent.tokenizer,
-    #     reward_model=reward_tracker,
-        
-    # )
+    ppo_trainer = PPOTrainer(
+        config=ppo_config,
+        model=agent.model,
+        ref_model=None,
+        tokenizer=agent.tokenizer,
+    )
 
-    episode_query_string, episode_response_string = run_episode(agent, game_env, reward_tracker)
+    ### Get the episode query and response strings
+    query_tensors, response_tensors, reward_tensor = run_episode(agent, game_env, ppo_trainer)
 
-    print("Reward: {}\nEpisode Query: {}\nEpisode Response: {}".format(reward_tracker.reward, episode_query_string, episode_response_string))
+    print(f"Query Tensor Len: {(query_tensors)}\nResponse Tensor Len: {(response_tensors)}\n")
+
+    ### Tokenize these, then pass these through the ppotrainer to update the model
+    stats = ppo_trainer.step(query_tensors, response_tensors, reward_tensor)
+
+    ### Save our model
+    ppo_trainer.save_model(f"models/test_{agent.model_name}.pth")
 
 if __name__ == "__main__":
     parser = ArgumentParser()

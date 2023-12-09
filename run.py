@@ -11,6 +11,7 @@ from argparse import ArgumentParser
 import argparse
 from agent.agent import Agent
 from agent import AgentFactory
+from utils import sanitize_observation, sanitize_response
 
 ###
 ### Run episode
@@ -21,6 +22,8 @@ def run_episode(agent : Agent, environment) -> Tuple:
 
     ### Reset environment
     observation, info = environment.reset()
+    ### NOTE: Setting 2nd parameter to true seems to sometimes break the model! Leaving it as false for now
+    observation = sanitize_observation(observation, False)
 
     ### Hardcoded
     pattern = r"<CMD>(.*?)<\/CMD>"
@@ -28,7 +31,7 @@ def run_episode(agent : Agent, environment) -> Tuple:
     ### Data to track
     score, moves, done = 0, 0, False
 
-    print("observation {}: {}".format("initial", observation.replace("\n", "")))
+    print("observation {}: {}".format("initial", observation))
 
     ### Take the first action
     if not args.manual_mode:
