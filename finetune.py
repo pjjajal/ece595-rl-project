@@ -129,7 +129,7 @@ def main(args : argparse.Namespace):
     ppo_config = PPOConfig(
         model_name=agent.model_name,
         log_with=None,
-        learning_rate=1e-1,
+        learning_rate=1e-8,
         batch_size=1,
         mini_batch_size=1,
         gradient_accumulation_steps=1,
@@ -153,30 +153,31 @@ def main(args : argparse.Namespace):
         tokenizer=agent.tokenizer,
     )
 
-    batch = {
-        "input_ids" : [],
-        "responses_decoded" : [],
-        "responses_generated" : [],
-        "reward" : [],
-    }
+    ### Epochs
+    for e in range(4):
+        batch = {
+            "input_ids" : [],
+            "responses_decoded" : [],
+            "responses_generated" : [],
+            "reward" : [],
+        }
 
-    ### Get the episode query and response strings
-    ### Accumulate batches!
-    for b in range(ppo_config.batch_size):
-        episode_batch = run_episode(agent, game_env, ppo_trainer, generation_kwargs)
+        ### Iteratively generate batches
+        for b in range(ppo_config.batch_size):
+            episode_batch = run_episode(agent, game_env, ppo_trainer, generation_kwargs)
 
-        batch["input_ids"] += episode_batch["input_ids"]
-        batch["responses_decoded"] += episode_batch["responses_decoded"]
-        batch["responses_generated"] += episode_batch["responses_generated"]
-        batch["reward"] += episode_batch["reward"]
+            batch["input_ids"] += episode_batch["input_ids"]
+            batch["responses_decoded"] += episode_batch["responses_decoded"]
+            batch["responses_generated"] += episode_batch["responses_generated"]
+            batch["reward"] += episode_batch["reward"]
 
-    print(len(batch["input_ids"]))
-    print(len(batch["responses_generated"]))
-    print(len(batch["responses_decoded"]))
-    print(len(batch["reward"]))
+        ### Tokenize these, then pass these through the ppotrainer to update the model
+        stats = ppo_trainer.step(batch["input_ids"], batch["responses_generated"], batch["reward"])
 
-    ### Tokenize these, then pass these through the ppotrainer to update the model
-    stats = ppo_trainer.step(batch["input_ids"], batch["responses_generated"], batch["reward"])
+    #print(len(batch["input_ids"]))
+    #print(len(batch["responses_generated"]))
+    #print(len(batch["responses_decoded"]))
+    #print(len(batch["reward"]))
 
     ### Stats gang
     print(f"Training stats: {stats}")
