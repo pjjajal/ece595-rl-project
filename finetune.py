@@ -129,16 +129,20 @@ def main(args : argparse.Namespace):
     ppo_config = PPOConfig(
         model_name=agent.model_name,
         log_with=None,
-        learning_rate=1e-5,
+        learning_rate=1e-1,
         batch_size=1,
         mini_batch_size=1,
         gradient_accumulation_steps=1,
         optimize_device_cache=True,
-        seed=0,
+        seed=37,
         use_score_scaling=False,
         use_score_norm=False,
-        score_clip=None,
+        score_clip=False,
         max_grad_norm=1.0,
+        ### Experimental
+        kl_penalty='mse',
+        steps=1024,
+        ppo_epochs=1,
     )
 
     ### Create PPO Trainer
@@ -149,14 +153,27 @@ def main(args : argparse.Namespace):
         tokenizer=agent.tokenizer,
     )
 
-    ### Get the episode query and response strings
-    #for k in range(2):
-    batch = run_episode(agent, game_env, ppo_trainer, generation_kwargs)
+    batch = {
+        "input_ids" : [],
+        "responses_decoded" : [],
+        "responses_generated" : [],
+        "reward" : [],
+    }
 
-    print(batch["input_ids"][0].shape)
-    print(batch["responses_generated"][0].shape)
-    print(batch["responses_decoded"][0])
-    print(batch["reward"][0])
+    ### Get the episode query and response strings
+    ### Accumulate batches!
+    for b in range(ppo_config.batch_size):
+        episode_batch = run_episode(agent, game_env, ppo_trainer, generation_kwargs)
+
+        batch["input_ids"] += episode_batch["input_ids"]
+        batch["responses_decoded"] += episode_batch["responses_decoded"]
+        batch["responses_generated"] += episode_batch["responses_generated"]
+        batch["reward"] += episode_batch["reward"]
+
+    print(len(batch["input_ids"]))
+    print(len(batch["responses_generated"]))
+    print(len(batch["responses_decoded"]))
+    print(len(batch["reward"]))
 
     ### Tokenize these, then pass these through the ppotrainer to update the model
     stats = ppo_trainer.step(batch["input_ids"], batch["responses_generated"], batch["reward"])
