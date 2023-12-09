@@ -137,11 +137,9 @@ def run_episode(
     ### Return batch info
     return batch
 
-
 def main(args: argparse.Namespace):
     ### Instantiate agent
     agent = AgentFactory.create(args.model, args.llama_version)
-    # ref_agent = AgentFactory.create(args.model, args.llama_version)
 
     ### Register a text-based game as a new Gym's environment.
     game_env_id = textworld.gym.register_game(
@@ -153,34 +151,21 @@ def main(args: argparse.Namespace):
     game_env = gym.make(game_env_id)
 
     generation_kwargs = {
-        "do_sample": True,
-        "top_k": 0.0,
-        "top_p": 1.0,
-        "max_new_tokens": 32,
-        "min_length": -1,
-        "pad_token_id": agent.tokenizer.eos_token_id,
-        "temperature": 0.99,
+        "min_length": -1, # don't ignore the EOS token
+        "top_k": 0.0, # no top-k sampling
+        "top_p": 1.0, # no nucleus sampling
+        "do_sample": True, # yes, we want to sample
+        "pad_token_id": agent.tokenizer.eos_token_id, # most decoder models don't have a padding token - use EOS token instead
+        "max_new_tokens": 32, # specify how many tokens you want to generate at most
     }
-
-    ### Generation kwargs "Works", but get NaN
-    # generation_kwargs = {"do_sample" : True, "top_k" : 0.0, "top_p" : 1.0, "max_new_tokens" : 32, "pad_token_id" : agent.tokenizer.eos_token_id}
-
-    ### "Works", but get NaN
-    # generation_kwargs = {"do_sample" : True, "top_k" : 16, "top_p" : 0.50, "max_new_tokens" : 32, "pad_token_id" : agent.tokenizer.pad_token_id, "temperature" : 1.0, "remove_invalid_values" : True}
-
-    ### "Works", but get NaN
-    # generation_kwargs = {"do_sample" : False, "max_new_tokens" : 32, "pad_token_id" : agent.tokenizer.pad_token_id}
 
     ### Config
     ppo_config = PPOConfig(
         learning_rate=1e-5,
         batch_size=1,
         mini_batch_size=1,
-        # max_grad_norm=0.01,
-        ### Experimental
-        # kl_penalty='kl',
-        # steps=1024,
-        # ppo_epochs=1,
+        kl_penalty="abs",
+        init_kl_coef=0.02,
     )
 
     ### Create PPO Trainer
@@ -216,18 +201,12 @@ def main(args: argparse.Namespace):
             batch["input_ids"], batch["responses_generated"], batch["reward"]
         )
 
-    # print(len(batch["input_ids"]))
-    # print(len(batch["responses_generated"]))
-    # print(len(batch["responses_decoded"]))
-    # print(len(batch["reward"]))
-
-    ### Stats gang
-        print(f"Training stats: {stats['ppo/returns/mean']}")
+        ### Stats gang
+        print(f"Training stats mean reward: {stats['ppo/returns/mean']}\nKL Loss: {stats['ppo/mean_non_score_reward']}")
 
     ### Really Annoying. Stole this from _save_pretrained(...) of PPOTrainer
     # ppo_trainer.accelerator.unwrap_model(ppo_trainer.model).save_pretrained("models/")
     # ppo_trainer.tokenizer.save_pretrained("models/")
-
 
 if __name__ == "__main__":
     parser = ArgumentParser()

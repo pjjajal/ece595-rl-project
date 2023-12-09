@@ -14,30 +14,17 @@ from trl import AutoModelForCausalLMWithValueHead, PPOConfig, PPOTrainer, create
 from .agent import Agent
 
 class LlamaAgent(Agent):
-    def __init__(self, version : str = "7B", model_postfix : str = "Chat-GPTQ") -> None:
-        ### Validate
-        if model_postfix not in ['Chat-AWQ', 'Chat-GPTQ']:
-            raise ValueError("llama_agent.py: model_postfix is invalid")
-    
+    def __init__(self) -> None:
         super().__init__()
-        model_name_or_path = f"TheBloke/Llama-2-{version}-{model_postfix}"
-        model_name_or_path = "meta-llama/Llama-2-7b-chat-hf"
-        
+
+        ### Model Name!
+        model_name_or_path = "NousResearch/Llama-2-7b-chat-hf"
 
         ### Save model name
         self.model_name = model_name_or_path
 
         print(f"llama_agent.py: Instantiating model: {model_name_or_path}")
 
-        # if model_postfix == "Chat-AWQ":
-        #     self.model = AutoModelForCausalLM.from_quantized(
-        #         model_name_or_path,
-        #         fuse_layers=True,
-        #         trust_remote_code=False,
-        #         safetensors=True,
-        #     )
-        # elif model_postfix == "Chat-GPTQ":
-        model_name_or_path = "meta-llama/Llama-2-7b-chat-hf"
         lora_config = LoraConfig(
             r=16,
             lora_alpha=32,
@@ -45,6 +32,7 @@ class LlamaAgent(Agent):
             bias="none",
             task_type="CAUSAL_LM",
         )
+
         self.model = AutoModelForCausalLMWithValueHead.from_pretrained(
             ### fromPretrained Args
             model_name_or_path,
@@ -58,17 +46,6 @@ class LlamaAgent(Agent):
             v_head_initializer_range=0.2,
             summary_dropout_prob=None
         )
-
-        ###
-        ### NOTE: This needs to not be done if we are loading a pre-trained model
-        ### Required for training: Add a value head to the model as well
-        ###
-        # self.model = AutoModelForCausalLMWithValueHead(
-        #     pretrained_model=self.model,
-        #     v_head_init_strategy="normal",
-        #     v_head_initializer_range=0.2,
-        #     summary_dropout_prob=None
-        # )
 
         ### NOTE: Note sure if this is proper
         self.model.is_peft_model = False if not hasattr(self.model, "is_peft_model") else self.model.is_peft_model
@@ -111,9 +88,7 @@ class LlamaAgent(Agent):
             self.chat, add_generation_prompt=True, tokenize=False
         )
         tokens = tokens + "<CMD>"
-        
         tokens = self.tokenizer(tokens, return_tensors="pt").input_ids.cuda()
-
         return tokens
 
     def _detokenize(self, generation_output, input_length):
@@ -149,6 +124,7 @@ class LlamaAgent(Agent):
         ### Generate output
         if ppo_trainer is None:
             generation_output = self.model.generate(tokens, **generate_kwargs)
+            
         ### Use PPOTrainer
         else:
             ### VERY IMPORTANT
