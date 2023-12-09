@@ -130,7 +130,7 @@ def main(args : argparse.Namespace):
 
     ### Config
     ppo_config = PPOConfig(
-        learning_rate=1e-5,
+        learning_rate=1e-6,
         batch_size=1,
         mini_batch_size=1,
         #max_grad_norm=0.01,
@@ -150,7 +150,7 @@ def main(args : argparse.Namespace):
     )
 
     ### Epochs
-    for e in range(1):
+    for e in range(5):
         batch = {
             "input_ids" : [],
             "responses_decoded" : [],

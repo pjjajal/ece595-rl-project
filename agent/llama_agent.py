@@ -21,31 +21,43 @@ class LlamaAgent(Agent):
     
         super().__init__()
         model_name_or_path = f"TheBloke/Llama-2-{version}-{model_postfix}"
+        model_name_or_path = "meta-llama/Llama-2-7b-chat-hf"
+        
 
         ### Save model name
         self.model_name = model_name_or_path
 
         print(f"llama_agent.py: Instantiating model: {model_name_or_path}")
 
-        if model_postfix == "Chat-AWQ":
-            self.model = AutoModelForCausalLM.from_quantized(
-                model_name_or_path,
-                fuse_layers=True,
-                trust_remote_code=False,
-                safetensors=True,
-            )
-        elif model_postfix == "Chat-GPTQ":
-            self.model = AutoModelForCausalLMWithValueHead.from_pretrained(
-                ### fromPretrained Args
-                model_name_or_path,
-                device_map="auto",
-                trust_remote_code=False,
-                revision="main",
-                ### Value Head
-                v_head_init_strategy=None,
-                v_head_initializer_range=0.2,
-                summary_dropout_prob=None
-            )
+        # if model_postfix == "Chat-AWQ":
+        #     self.model = AutoModelForCausalLM.from_quantized(
+        #         model_name_or_path,
+        #         fuse_layers=True,
+        #         trust_remote_code=False,
+        #         safetensors=True,
+        #     )
+        # elif model_postfix == "Chat-GPTQ":
+        model_name_or_path = "meta-llama/Llama-2-7b-chat-hf"
+        lora_config = LoraConfig(
+            r=16,
+            lora_alpha=32,
+            lora_dropout=0.05,
+            bias="none",
+            task_type="CAUSAL_LM",
+        )
+        self.model = AutoModelForCausalLMWithValueHead.from_pretrained(
+            ### fromPretrained Args
+            model_name_or_path,
+            device_map="auto",
+            # trust_remote_code=False,
+            # revision="main",
+            load_in_8bit=True,
+            peft_config=lora_config,
+            ### Value Head
+            v_head_init_strategy=None,
+            v_head_initializer_range=0.2,
+            summary_dropout_prob=None
+        )
 
         ###
         ### NOTE: This needs to not be done if we are loading a pre-trained model
