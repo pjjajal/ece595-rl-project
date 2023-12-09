@@ -21,10 +21,6 @@ class Agent(ABC):
         pass
 
     @abstractmethod
-    def initial_action(self):
-        pass
-
-    @abstractmethod
     def act(self, obs):
         pass
 

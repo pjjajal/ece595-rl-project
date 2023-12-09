@@ -1,10 +1,14 @@
 import re
 from awq import AutoAWQForCausalLM
-from transformers import AutoTokenizer, AutoModelForCausalLM
+from transformers import AutoTokenizer, AutoModelForCausalLM, BitsAndBytesConfig
+from typing import Dict, List, Tuple, Any
+
+### Torch
+import torch
 
 ### TRL
-import trl
-from trl import AutoModelForCausalLMWithValueHead
+from peft import LoraConfig
+from trl import AutoModelForCausalLMWithValueHead, PPOConfig, PPOTrainer, create_reference_model, set_seed, TextEnvironment
 
 ### Local Imports
 from .agent import Agent
@@ -23,26 +27,47 @@ class LlamaAgent(Agent):
 
         print(f"llama_agent.py: Instantiating model: {model_name_or_path}")
 
+        ### NOTE: Cannot use on quant models already
+        # lora_config = LoraConfig(
+        #     r=16,
+        #     lora_alpha=32,
+        #     lora_dropout=0.05,
+        #     bias="none",
+        #     task_type="CAUSAL_LM",
+        # )
+        
+        ### NOTE: Cannot quant GPTQ model
+        # nf4_config = BitsAndBytesConfig(
+        #     load_in_4bit=True, bnb_4bit_quant_type="nf4", bnb_4bit_use_double_quant=True, bnb_4bit_compute_dtype=torch.bfloat16
+        # )
+
         if model_postfix == "Chat-AWQ":
             self.model = AutoAWQForCausalLM.from_quantized(
                 model_name_or_path,
                 fuse_layers=True,
                 trust_remote_code=False,
-                safetensors=True,
             )
         elif model_postfix == "Chat-GPTQ":
             self.model = AutoModelForCausalLM.from_pretrained(
+                ### fromPretrained Args
                 model_name_or_path,
                 device_map="auto",
                 trust_remote_code=False,
-                revision="main"
+                revision="main",
             )
 
         ###
         ### NOTE: This needs to not be done if we are loading a pre-trained model
         ### Required for training: Add a value head to the model as well
         ###
-        self.model = AutoModelForCausalLMWithValueHead(self.model)
+        self.model = AutoModelForCausalLMWithValueHead(
+            pretrained_model=self.model,
+            v_head_init_strategy="normal",
+            v_head_initializer_range=0.2,
+            summary_dropout_prob=None
+        )
+
+        print(f"Model v_head: {self.model.v_head}")
 
         ### NOTE: Note sure if this is proper
         self.model.is_peft_model = False if not hasattr(self.model, "is_peft_model") else self.model.is_peft_model
@@ -116,38 +141,16 @@ class LlamaAgent(Agent):
 
         return decoded_outputs
 
-    def initial_action(self):
-        tokens = self.tokenizer.apply_chat_template(
-            self.chat, add_generation_prompt=True, tokenize=False
-        )
-        #print(tokens)
-        tokens = tokens + "<CMD>"
-        tokens = self.tokenizer(tokens, return_tensors="pt").input_ids.cuda()
-        input_length = tokens.shape[1]
-        # Generate output
-        generation_output = self.model.generate(
-            tokens,
-            do_sample=False,
-            #temperature=0.5,
-            #top_p=0.95,
-            #top_k=40,
-            max_new_tokens=1024,
-        )
-
-        decoded_outputs = self._detokenize(generation_output, input_length)
-        return decoded_outputs
-
-    def act(self, obs):
+    def act(self, obs : str, generate_kwargs : Dict, ppo_trainer : PPOTrainer = None) -> Tuple:
         tokens = self._tokenize(obs)
         input_length = tokens.shape[1]
-        # Generate output
-        generation_output = self.model.generate(
-            tokens,
-            do_sample=False,
-            #temperature=0.6,
-            #top_p=0.95,
-            #top_k=40,
-            max_new_tokens=1024,
-        )
+
+        ### Generate output
+        if ppo_trainer is None:
+            generation_output = self.model.generate(tokens, **generate_kwargs)
+        ### Use PPOTrainer
+        else:
+            generation_output = ppo_trainer.generate(tokens.squeeze(), generate_ref_response=False, return_prompt=False, **generate_kwargs)
+
         decoded_outputs = self._detokenize(generation_output, input_length)
-        return decoded_outputs
+        return generation_output, decoded_outputs

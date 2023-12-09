@@ -15,6 +15,8 @@ import torch
 from tqdm import tqdm
 
 ### TRL
+from transformers import BitsAndBytesConfig
+from peft import LoraConfig
 from trl import AutoModelForCausalLMWithValueHead, PPOConfig, PPOTrainer, create_reference_model, set_seed, TextEnvironment
 
 ### Local Imports
@@ -25,12 +27,13 @@ from utils import sanitize_observation, sanitize_response
 ### Helper function for tokenizing observations
 ### May need to change / modify
 def tokenize_observation(agent : Agent, observation : str) -> Any:
-    return agent.tokenizer(observation, return_tensors="pt").input_ids.cuda()
+    tokens = agent.tokenizer(observation, return_tensors="pt").input_ids.cuda()
+    return tokens
 
 ###
 ### Run episode w/ 
 ###
-def run_episode(agent : Agent, environment, ppo_trainer : PPOTrainer) -> Tuple:
+def run_episode(agent : Agent, environment, ppo_trainer : PPOTrainer, generation_kwargs : Dict) -> Tuple:
     ### Reset agent 
     agent.reset_chat()
 
@@ -44,7 +47,7 @@ def run_episode(agent : Agent, environment, ppo_trainer : PPOTrainer) -> Tuple:
 
     ### Reset environment
     observation, info = environment.reset()
-    observation = sanitize_observation(observation, False)
+    observation = sanitize_observation(observation)
 
     ### Record as string and tensor
     episode_query_string = observation
@@ -57,7 +60,7 @@ def run_episode(agent : Agent, environment, ppo_trainer : PPOTrainer) -> Tuple:
     score, moves, done = 0, 0, False
 
     ### Take the first action
-    response = agent.act(observation)
+    generated_response_output, response = agent.act(observation, generation_kwargs, ppo_trainer)
 
     while True:
         ### Increment moves!
@@ -70,7 +73,7 @@ def run_episode(agent : Agent, environment, ppo_trainer : PPOTrainer) -> Tuple:
 
         ### Append to response list
         episode_response_string += response
-        episode_response_tensor_list.append( tokenize_observation(agent, observation) )
+        episode_response_tensor_list.append( generated_response_output )
 
         ### Let the environment act and sanitize the output
         observation, score, done, info = environment.step(response)
@@ -82,7 +85,7 @@ def run_episode(agent : Agent, environment, ppo_trainer : PPOTrainer) -> Tuple:
             episode_query_tensor_list.append( tokenize_observation(agent, observation) )
 
         ### Act
-        response = agent.act(observation)
+        generated_response_output, response = agent.act(observation, generation_kwargs, ppo_trainer )
         
         ### Check confusion after agent acts, exit early potentially
         if agent.is_confused or done:
@@ -92,7 +95,7 @@ def run_episode(agent : Agent, environment, ppo_trainer : PPOTrainer) -> Tuple:
         ### environment.render()
     
     ### Compute 'win' from game output
-    win = "You lost" not in observation and not agent.is_confused and moves < 32
+    win = "You lost" not in observation and not agent.is_confused and moves < args.max_episode_steps
 
     ### Compute reward based on win and score
     if win:
@@ -104,30 +107,61 @@ def run_episode(agent : Agent, environment, ppo_trainer : PPOTrainer) -> Tuple:
     episode_query_string = episode_query_string.strip()
     episode_response_string = episode_response_string.strip()
 
-    print("Reward: {}\nEpisode Query: {}\nEpisode Response: {}".format(reward, episode_query_string, episode_response_string))
+    print("Win: {}\nReward: {}\nEpisode Query: {}\nEpisode Response: {}".format(win, reward, episode_query_string, episode_response_string))
+
+    ### Concat
+    episode_query_concat_tensor = torch.cat(episode_query_tensor_list, dim=-1).squeeze()
+    episode_response_summary_tensor = episode_response_tensor_list[-1].squeeze()
+
+    ### Pad manually with eos tokens
+
+    # for q, r in zip(episode_query_tensor_list, episode_response_tensor_list):
+    #     print(f"q shape: {q.shape}")
+    #     print(f"r shape: {r.shape}")
+    #     print("+++++++++++++++++++++++")
+
+    # print(f"query concat tensor shape: {episode_query_concat_tensor.shape}")
+    # print(f"response summary tensor shape: {episode_response_summary_tensor.shape}")
 
     ### Return info
-    return episode_query_tensor_list, episode_response_tensor_list, [torch.tensor(data=[reward])]
+    return [ episode_query_concat_tensor ], [ episode_response_summary_tensor ], [torch.tensor(data=[reward], dtype=torch.float32, device=episode_response_summary_tensor.device)]
 
 def main(args : argparse.Namespace):
     ### Instantiate agent
     agent = AgentFactory.create(args.model, args.llama_version)
 
     ### Register a text-based game as a new Gym's environment.
-    game_env_id = textworld.gym.register_game(args.game, max_episode_steps=32)
+    game_env_id = textworld.gym.register_game(args.game, max_episode_steps=args.max_episode_steps)
     game_env = gym.make(game_env_id)
 
-    ### Create PPO Config
-    ppo_config_args = {
-        "batch_size" : 1,
-        "learning_rate" : 1.5e-5,
-    }
-
     ### Generation kwargs
-    # generation_kwargs = {"do_sample" : True, "top_p" : 0.95, "top_k" : 32, "temperature" : 0.50, "max_new_tokens" : 32}
+    ### Use model defaults, Gets stuck?
+    #generation_kwargs = {}
+
+    ### Does not work
+    generation_kwargs = {"do_sample" : True, "top_k" : 0.0, "top_p" : 1.0, "max_new_tokens" : 32, "pad_token_id" : agent.tokenizer.eos_token_id}
+
+    ### "Works", but get NaN
+    #generation_kwargs = {"do_sample" : True, "top_k" : 16, "top_p" : 0.50, "max_new_tokens" : 32, "pad_token_id" : agent.tokenizer.pad_token_id, "temperature" : 1.0, "remove_invalid_values" : True}
+
+    ### "Works", but get NaN
+    #generation_kwargs = {"do_sample" : False, "max_new_tokens" : 32, "pad_token_id" : agent.tokenizer.pad_token_id}
 
     ### Config
-    ppo_config = PPOConfig(**ppo_config_args)
+    ppo_config = PPOConfig(
+        model_name=agent.model_name,
+        log_with=None,
+        learning_rate=1e-5,
+        batch_size=1,
+        mini_batch_size=1,
+        gradient_accumulation_steps=1,
+        optimize_device_cache=True,
+        seed=0,
+        use_score_scaling=False,
+        use_score_norm=False,
+        score_clip=None,
+        max_grad_norm=1.0,
+    )
 
     ### Create PPO Trainer
     ppo_trainer = PPOTrainer(
@@ -138,18 +172,21 @@ def main(args : argparse.Namespace):
     )
 
     ### Get the episode query and response strings
-    query_tensors, response_tensors, reward_tensor = run_episode(agent, game_env, ppo_trainer)
-
-    print(f"Query Tensor Len: {(query_tensors)}\nResponse Tensor Len: {(response_tensors)}\n")
+    query_tensor, response_tensor, reward_tensor = run_episode(agent, game_env, ppo_trainer, generation_kwargs)
 
     ### Tokenize these, then pass these through the ppotrainer to update the model
-    stats = ppo_trainer.step(query_tensors, response_tensors, reward_tensor)
+    stats = ppo_trainer.step(query_tensor, response_tensor, reward_tensor)
 
-    ### Save our model
-    ppo_trainer.save_model(f"models/test_{agent.model_name}.pth")
+    ### Stats gang
+    print(f"Training stats: {stats}")
+    
+    ### Really Annoying. Stole this from _save_pretrained(...) of PPOTrainer
+    ppo_trainer.accelerator.unwrap_model(ppo_trainer.model).save_pretrained("models/")
+    ppo_trainer.tokenizer.save_pretrained("models/")
 
 if __name__ == "__main__":
     parser = ArgumentParser()
+    parser.add_argument("--max-episode-steps", type=int, default=8)
     parser.add_argument("--model", default="mistral")
     parser.add_argument("--game", required=True)
     parser.add_argument("--llama-version", type=str, default="13B")

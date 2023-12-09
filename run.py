@@ -35,7 +35,7 @@ def run_episode(agent : Agent, environment) -> Tuple:
 
     ### Take the first action
     if not args.manual_mode:
-        command = agent.act(observation)
+        _, command = agent.act(observation)
     else:
         command = input("> ")
 
@@ -56,7 +56,7 @@ def run_episode(agent : Agent, environment) -> Tuple:
 
         ### Act
         if not args.manual_mode:
-            command = agent.act(observation.replace("\n", ""))
+            _, command = agent.act(observation.replace("\n", ""))
         else:
             command = input("> ")
         

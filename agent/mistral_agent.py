@@ -1,7 +1,11 @@
 import re
 from awq import AutoAWQForCausalLM
 from transformers import AutoTokenizer, AutoModelForCausalLM
-from trl import AutoModelForCausalLMWithValueHead
+from trl import AutoModelForCausalLMWithValueHead, PPOTrainer
+from typing import Dict, Tuple
+
+### Torch
+import torch
 
 ### Local Imports
 from .agent import Agent
@@ -117,40 +121,22 @@ class MistralAgent(Agent):
         self.chat.append({"role": "assistant", "content": decoded_outputs})
         return decoded_outputs
 
-    def initial_action(self, objective, initial_state):
-        tokens = self.tokenizer.apply_chat_template(
-            self.chat, add_generation_prompt=True, tokenize=False
-        )
-        #print(tokens)
-        tokens = tokens + "<CMD>"
-        tokens = self.tokenizer(tokens, return_tensors="pt").input_ids.cuda()
-        input_length = tokens.shape[1]
-        # Generate output
-        generation_output = self.model.generate(
-            tokens,
-            do_sample=False,
-            #temperature=0.5,
-            #temperature=0.0,
-            #top_p=0.95,
-            #top_k=40,
-            max_new_tokens=1024,
-        )
-
-        decoded_outputs = self._detokenize(generation_output, input_length)
-        return decoded_outputs
-
-    def act(self, obs):
+    def act(self, obs : str, ppo_trainer : PPOTrainer = None, ppo_trainer_generate_kwargs : Dict = None) -> Tuple:
         tokens = self._tokenize(obs)
         input_length = tokens.shape[1]
-        # Generate output
-        generation_output = self.model.generate(
-            tokens,
-            do_sample=False,
-            #temperature=0.6,
-            #temperature=0.0,
-            #top_p=0.95,
-            #top_k=40,
-            max_new_tokens=1024,
-        )
+
+        ### Generate output
+        if ppo_trainer is None:
+            generation_output = self.model.generate(
+                tokens,
+                do_sample=True,
+                top_p=1.0,
+                top_k=0,
+                max_new_tokens=32,
+            )
+        ### Use PPOTrainer
+        else:
+            generation_output = ppo_trainer.generate(tokens.squeeze(), generate_ref_response=False, return_prompt=False, **ppo_trainer_generate_kwargs)
+
         decoded_outputs = self._detokenize(generation_output, input_length)
-        return decoded_outputs
+        return generation_output, decoded_outputs
