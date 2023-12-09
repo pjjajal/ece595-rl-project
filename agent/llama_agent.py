@@ -42,10 +42,11 @@ class LlamaAgent(Agent):
         # )
 
         if model_postfix == "Chat-AWQ":
-            self.model = AutoAWQForCausalLM.from_quantized(
+            self.model = AutoModelForCausalLM.from_quantized(
                 model_name_or_path,
                 fuse_layers=True,
                 trust_remote_code=False,
+                safetensors=True,
             )
         elif model_postfix == "Chat-GPTQ":
             self.model = AutoModelForCausalLM.from_pretrained(
@@ -67,7 +68,7 @@ class LlamaAgent(Agent):
             summary_dropout_prob=None
         )
 
-        print(f"Model v_head: {self.model.v_head}")
+        # print(f"Model v_head: {self.model.v_head}")
 
         ### NOTE: Note sure if this is proper
         self.model.is_peft_model = False if not hasattr(self.model, "is_peft_model") else self.model.is_peft_model
@@ -150,7 +151,10 @@ class LlamaAgent(Agent):
             generation_output = self.model.generate(tokens, **generate_kwargs)
         ### Use PPOTrainer
         else:
-            generation_output = ppo_trainer.generate(tokens.squeeze(), generate_ref_response=False, return_prompt=False, **generate_kwargs)
+            ### VERY IMPORTANT
+            ### Truncate generated output to input_length to get the 'new' generated content only
+            ### This makes it so the generation_output corresponds exactly to the decoded_outputs (see dtokeinze above for the slicing behavior of generation_output)
+            generation_output = ppo_trainer.generate(tokens.squeeze(), **generate_kwargs)
 
         decoded_outputs = self._detokenize(generation_output, input_length)
-        return generation_output, decoded_outputs
+        return generation_output[:, input_length:], decoded_outputs

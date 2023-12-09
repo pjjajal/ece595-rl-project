@@ -33,5 +33,5 @@ def sanitize_observation(observation : str, enforce_alphanumeric_only : bool = F
     return sanitized_observation
 
 def sanitize_response(response : str) -> str:
-    sanitized_response = response.strip() + ". "
+    sanitized_response = response.strip()
     return sanitized_response

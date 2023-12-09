@@ -17,13 +17,16 @@ from utils import sanitize_observation, sanitize_response
 ### Run episode
 ###
 def run_episode(agent : Agent, environment) -> Tuple:
+    ### kwargs for generation!
+    generation_kwargs = {"do_sample" : True, "top_k" : 0.0, "top_p" : 0.95, "max_new_tokens" : 32}
+
     ### Reset agent 
     agent.reset_chat()
 
     ### Reset environment
     observation, info = environment.reset()
     ### NOTE: Setting 2nd parameter to true seems to sometimes break the model! Leaving it as false for now
-    observation = sanitize_observation(observation, False)
+    observation = sanitize_observation(observation)
 
     ### Hardcoded
     pattern = r"<CMD>(.*?)<\/CMD>"
@@ -35,7 +38,7 @@ def run_episode(agent : Agent, environment) -> Tuple:
 
     ### Take the first action
     if not args.manual_mode:
-        _, command = agent.act(observation)
+        _, command = agent.act(observation, generation_kwargs)
     else:
         command = input("> ")
 
@@ -47,16 +50,18 @@ def run_episode(agent : Agent, environment) -> Tuple:
         if not args.manual_mode:
             command = command.replace("</s>", "")
             command = re.search(pattern, command).group(1)
+            command = sanitize_response(command)
 
             print("command {}: {}".format(moves, command))
 
         observation, score, done, info = environment.step(command)
+        observation = sanitize_observation(observation)
 
-        print("observation {}: {}".format(moves, observation.replace("\n", "")))
+        print("observation {}: {}".format(moves, observation))
 
         ### Act
         if not args.manual_mode:
-            _, command = agent.act(observation.replace("\n", ""))
+            _, command = agent.act(observation, generation_kwargs)
         else:
             command = input("> ")
         
@@ -65,7 +70,8 @@ def run_episode(agent : Agent, environment) -> Tuple:
             break
 
         ### Render
-        environment.render()
+        if args.manual_mode:
+            environment.render()
     
     ### Compute 'win' from game output
     win = "You lost" not in observation and not agent.is_confused and moves < args.max_episodes
