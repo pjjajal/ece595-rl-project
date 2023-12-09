@@ -101,7 +101,7 @@ def run_episode(agent : Agent, environment, ppo_trainer : PPOTrainer, generation
 
     ### Now, consolidate batch info
     ### In particular, we want to consolidate responses_generated, and input_ids
-    batch["responses_generated"] = [ torch.cat(batch["responses_generated"], dim=-1) ]
+    batch["responses_generated"] = [ torch.cat(batch["responses_generated"], dim=-1).squeeze() ]
     batch["input_ids"] = [ torch.cat(batch["input_ids"], dim=-1) ]
     batch["reward"] = [ torch.tensor(data=[1.0], dtype=torch.float32, device="cuda") ] if win else [ torch.tensor(data=[-1.0], dtype=torch.float32, device="cuda") ]
 
@@ -153,16 +153,16 @@ def main(args : argparse.Namespace):
     #for k in range(2):
     batch = run_episode(agent, game_env, ppo_trainer, generation_kwargs)
 
-    # print(len(batch["input_ids"]))
-    # print(len(batch["responses_generated"]))
-    # print((batch["responses_decoded"]))
-    # print((batch["reward"]))
+    print(batch["input_ids"][0].shape)
+    print(batch["responses_generated"][0].shape)
+    print(batch["responses_decoded"][0])
+    print(batch["reward"][0])
 
     ### Tokenize these, then pass these through the ppotrainer to update the model
-    # stats = ppo_trainer.step(batch["input_ids"], batch["responses_generated"], batch["rewards"])
+    stats = ppo_trainer.step(batch["input_ids"], batch["responses_generated"], batch["reward"])
 
     ### Stats gang
-    # print(f"Training stats: {stats}")
+    print(f"Training stats: {stats}")
     
     ### Really Annoying. Stole this from _save_pretrained(...) of PPOTrainer
     # ppo_trainer.accelerator.unwrap_model(ppo_trainer.model).save_pretrained("models/")
