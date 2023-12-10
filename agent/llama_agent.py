@@ -133,4 +133,4 @@ class LlamaAgent(Agent):
             generation_output = ppo_trainer.generate(tokens.squeeze(), **generate_kwargs)
 
         decoded_outputs = self._detokenize(generation_output, input_length)
-        return generation_output[:, input_length:], decoded_outputs
+        return generation_output[:, input_length:], decoded_outputs, tokens

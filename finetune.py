@@ -54,33 +54,38 @@ def run_episode(
     ### Emulates dataloader behavior of TRL examples
     batch = {
         "input_ids": [],
-        "responses_decoded": [],
         "responses_generated": [],
+        "observations": [],
+        "responses_decoded": [],
         "reward": [],
     }
 
     ### Reset environment
     observation, info = environment.reset()
-    observation = sanitize_observation(observation)
-
-    ### Record as string and tensor
-    tokenized_observation = tokenize_observation(agent, observation)
-    batch["input_ids"].append(tokenized_observation)
-
+    print(observation)
     ### Hardcoded
     pattern = r"<CMD>(.*?)<\/CMD>"
 
     ### Data to track
     score, moves, done = 0, 0, False
 
-    ### Take the first action
-    generated_response_output, response = agent.act(
-        observation, generation_kwargs, ppo_trainer
-    )
-
     while True:
         ### Increment moves!
         moves += 1
+
+        ### Check this so we don't append the final observation
+        if not done:
+            observation = sanitize_observation(observation)
+            # tokenized_observation = tokenize_observation(agent, observation)
+            batch['observations'].append(observation)
+            # batch["input_ids"].append(tokenized_observation)
+
+        ### Get our next response
+        generated_response_output, response, tokenized_observation = agent.act(
+            observation, generation_kwargs, ppo_trainer
+        )
+        batch["input_ids"].append(tokenized_observation)
+
 
         ### Get command from agent outputs
         response = response.replace("</s>", "")
@@ -92,17 +97,6 @@ def run_episode(
 
         ### Let the environment act and sanitize the output
         observation, score, done, info = environment.step(response)
-
-        ### Check this so we don't append the final observation
-        if not done:
-            observation = sanitize_observation(observation)
-            tokenized_observation = tokenize_observation(agent, observation)
-            batch["input_ids"].append(tokenized_observation)
-
-        ### Get our next response
-        generated_response_output, response = agent.act(
-            observation, generation_kwargs, ppo_trainer
-        )
 
         ### Check confusion after agent acts, exit early potentially
         if done or agent.is_confused:
@@ -122,17 +116,19 @@ def run_episode(
         agent.tokenizer.decode(r.squeeze()) for r in batch["responses_generated"]
     ]
 
+    print(f"input_ids {len(batch['input_ids'])}; responses_generated {len(batch['responses_generated'])}")
+
     ### Now, consolidate batch info
     ### In particular, we want to consolidate responses_generated, and input_ids
-    batch["responses_generated"] = [
-        torch.cat(batch["responses_generated"], dim=-1).squeeze()
-    ]
-    batch["input_ids"] = [torch.cat(batch["input_ids"], dim=-1)]
-    batch["reward"] = (
-        [torch.tensor(data=[1.0], dtype=torch.float32, device="cuda")]
-        if win
-        else [torch.tensor(data=[-1.0], dtype=torch.float32, device="cuda")]
-    )
+    # batch["responses_generated"] = [
+    #     torch.cat(batch["responses_generated"], dim=-1).squeeze()
+    # ]
+    # batch["input_ids"] = [torch.cat(batch["input_ids"], dim=-1)]
+    # batch["reward"] = (
+    #     [torch.tensor(data=[1.0], dtype=torch.float32, device="cuda")]
+    #     if win
+    #     else [torch.tensor(data=[-1.0], dtype=torch.float32, device="cuda")]
+    # )
 
     ### Return batch info
     return batch

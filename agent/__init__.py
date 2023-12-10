@@ -8,4 +8,4 @@ class AgentFactory:
         if "mistral" in model_name:
             return MistralAgent(version)
         elif "llama" in model_name:
-            return LlamaAgent(version)
+            return LlamaAgent()
