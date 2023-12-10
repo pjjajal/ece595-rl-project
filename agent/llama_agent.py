@@ -74,7 +74,12 @@ class LlamaAgent(Agent):
         self.chat = [
             {
                 "role": "user",
-                "content": "You are playing TextWorld. I will describe the environment. You must issue commands to play the game based on my guidance. Commands are of the form <CMD> [insert command] </CMD>. If you see or notice an object, try picking it up. Otherwise, search rooms and open doors to find an object.",
+                ### V1
+                "content": "You are playing TextWorld. I will describe the environment. You must issue commands to play the game based on my guidance. Commands are of the form <CMD> [insert command] </CMD>.",
+                ### V2
+                #"content": "You are playing TextWorld. I will describe the environment. You must issue commands to play the game based on my guidance. Commands are of the form <CMD> [insert command] </CMD>. If you see or notice an object, try picking it up. Otherwise, search rooms and open doors to find an object.",
+                ### V3
+                #"content": "You are playing TextWorld. I will describe the environment. You must issue commands to play the game based on my guidance. Commands are of the form <CMD> [insert command] </CMD>. If you see or notice an object, try picking it up. Otherwise, search rooms and open doors to find an object.",
             },
             {
                 "role": "assistant",
@@ -123,7 +128,7 @@ class LlamaAgent(Agent):
 
         ### Generate output
         if ppo_trainer is None:
-            generation_output = self.model.generate(tokens, **generate_kwargs)
+            generation_output = self.model.generate(input_ids=tokens, **generate_kwargs)
             
         ### Use PPOTrainer
         else:

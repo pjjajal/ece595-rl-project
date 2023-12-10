@@ -16,10 +16,7 @@ from utils import sanitize_observation, sanitize_response
 ###
 ### Run episode
 ###
-def run_episode(agent : Agent, environment) -> Tuple:
-    ### kwargs for generation!
-    generation_kwargs = {"do_sample" : True, "top_k" : 0.0, "top_p" : 0.95, "max_new_tokens" : 32}
-
+def run_episode(agent : Agent, environment, generation_kwargs) -> Tuple:
     ### Reset agent 
     agent.reset_chat()
 
@@ -38,7 +35,7 @@ def run_episode(agent : Agent, environment) -> Tuple:
 
     ### Take the first action
     if not args.manual_mode:
-        _, command = agent.act(observation, generation_kwargs)
+        _, command, _ = agent.act(observation, generation_kwargs, None)
     else:
         command = input("> ")
 
@@ -61,7 +58,7 @@ def run_episode(agent : Agent, environment) -> Tuple:
 
         ### Act
         if not args.manual_mode:
-            _, command = agent.act(observation, generation_kwargs)
+            _, command, _ = agent.act(observation, generation_kwargs, None)
         else:
             command = input("> ")
         
@@ -89,7 +86,13 @@ def main(args : argparse.Namespace):
     env_id = textworld.gym.register_game(args.game, max_episode_steps=args.max_episodes)
     env = gym.make(env_id, new_step_api=False)
 
-    win, score, moves, confused = run_episode(agent, env)
+    ### For token generation
+    generation_kwargs = {
+        "do_sample": False,
+        "max_new_tokens": 32,
+    }
+
+    win, score, moves, confused = run_episode(agent, env, generation_kwargs)
 
     print("win: {}\nmoves: {}\nscore: {}\nconfused: {}".format(win, moves, score, confused))
 
@@ -103,11 +106,11 @@ if __name__ == "__main__":
     parser = ArgumentParser()
     parser.add_argument("--test-all", action="store_true")
     parser.add_argument("--manual-mode", action="store_true")
-    parser.add_argument("--max-episodes", type=int, default=32)
+    parser.add_argument("--max-episodes", type=int, default=12)
     
-    parser.add_argument("--model", type=str, default="mistral")
+    parser.add_argument("--model", type=str, default="llama")
     parser.add_argument("--game", type=str, required=True)
-    parser.add_argument("--llama-version", type=str, default="13B")
+    parser.add_argument("--llama-version", type=str, default="7B")
     args = parser.parse_args()
 
     ### Decide evaluation mode
