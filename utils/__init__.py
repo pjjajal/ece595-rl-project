@@ -12,6 +12,7 @@ def sanitize_observation(observation : str, enforce_alphanumeric_only : bool = F
     multiple_newline_reduce = r"\n+"
     textworld_graphic_pattern = r"[_]+.+\$\$\$\$\$\$\$\s\s"
     #correct_sentence_pattern = r"\.[a-zA-Z0-9_]+[^$]"
+    the_end_replacement_pattern = r"(\s)+\*\*\* The End \*\*\*"
 
     ### Replace multiple new lines with a single newline
     sanitized_observation = observation
@@ -22,6 +23,7 @@ def sanitize_observation(observation : str, enforce_alphanumeric_only : bool = F
     sanitized_observation = re.sub(carat_removal_pattern, '', sanitized_observation)
     sanitized_observation = re.sub(multiple_newline_reduce, ' ', sanitized_observation)
     sanitized_observation = re.sub(textworld_graphic_pattern, '', sanitized_observation)
+    sanitized_observation = re.sub(the_end_replacement_pattern, ' You won.', sanitized_observation)
 
     ### NOTE: Should go after the other operations
     if enforce_alphanumeric_only:
