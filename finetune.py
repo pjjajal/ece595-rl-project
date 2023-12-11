@@ -31,6 +31,9 @@ from agent import AgentFactory
 from agent.agent import Agent
 from utils import sanitize_observation, sanitize_response
 
+import warnings
+from pprint import pprint
+
 
 ### Helper function for tokenizing observations
 ### May need to change / modify
@@ -62,7 +65,7 @@ def run_episode(
 
     ### Reset environment
     observation, info = environment.reset()
-    print(observation)
+
     ### Hardcoded
     pattern = r"<CMD>(.*?)<\/CMD>"
 
@@ -76,15 +79,15 @@ def run_episode(
         ### Check this so we don't append the final observation
         if not done:
             observation = sanitize_observation(observation)
-            # tokenized_observation = tokenize_observation(agent, observation)
+            tokenized_observation = tokenize_observation(agent, observation)
             batch['observations'].append(observation)
-            # batch["input_ids"].append(tokenized_observation)
+            batch["input_ids"].append(tokenized_observation)
 
         ### Get our next response
         generated_response_output, response, tokenized_observation = agent.act(
             observation, generation_kwargs, ppo_trainer
         )
-        batch["input_ids"].append(tokenized_observation)
+        # batch["input_ids"].append(tokenized_observation)
 
 
         ### Get command from agent outputs
@@ -116,19 +119,18 @@ def run_episode(
         agent.tokenizer.decode(r.squeeze()) for r in batch["responses_generated"]
     ]
 
-    print(f"input_ids {len(batch['input_ids'])}; responses_generated {len(batch['responses_generated'])}")
 
     ### Now, consolidate batch info
-    ### In particular, we want to consolidate responses_generated, and input_ids
-    # batch["responses_generated"] = [
-    #     torch.cat(batch["responses_generated"], dim=-1).squeeze()
-    # ]
-    # batch["input_ids"] = [torch.cat(batch["input_ids"], dim=-1)]
-    # batch["reward"] = (
-    #     [torch.tensor(data=[1.0], dtype=torch.float32, device="cuda")]
-    #     if win
-    #     else [torch.tensor(data=[-1.0], dtype=torch.float32, device="cuda")]
-    # )
+    ## In particular, we want to consolidate responses_generated, and input_ids
+    batch["responses_generated"] = [
+        torch.cat(batch["responses_generated"], dim=-1).squeeze()
+    ]
+    batch["input_ids"] = [torch.cat(batch["input_ids"], dim=-1)]
+    batch["reward"] = (
+        [torch.tensor(data=[1.0], dtype=torch.float32, device="cuda")]
+        if win
+        else [torch.tensor(data=[-1.0], dtype=torch.float32, device="cuda")]
+    )
 
     ### Return batch info
     return batch
@@ -185,14 +187,14 @@ def main(args: argparse.Namespace):
         ### Iteratively generate batches
         for b in range(ppo_config.batch_size):
             episode_batch = run_episode(agent, game_env, ppo_trainer, generation_kwargs)
-            print(episode_batch)
             batch["input_ids"] += episode_batch["input_ids"]
             batch["responses_decoded"] += episode_batch["responses_decoded"]
             batch["responses_generated"] += episode_batch["responses_generated"]
             batch["reward"] += episode_batch["reward"]
 
         ### Tokenize these, then pass these through the ppotrainer to update the model
-        print("running backward")
+        pprint("running backward")
+        print(batch["responses_decoded"])
         stats = ppo_trainer.step(
             batch["input_ids"], batch["responses_generated"], batch["reward"]
         )
