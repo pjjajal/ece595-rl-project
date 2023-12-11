@@ -1,9 +1,11 @@
 #!/bin/bash
-
 mkdir runs
 
-MODEL="llama"
-TEST_NAME=$1
+MODEL=$1
+TEST_NAME=$2
+LLAMA_VERSION=""
+
+echo "Evaluating model ${MODEL} on all games"
 
 GAME_PREFIX="thunt_"
 

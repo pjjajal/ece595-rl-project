@@ -12,7 +12,7 @@ from .agent import Agent
 
 class MistralAgent(Agent):
     def __init__(self, version : str = "7B") -> None:
-        model_postfix : str = "Instruct-v0.1-GPTQ"
+        model_postfix : str = "Instruct-v0.1-AWQ"
 
         ### Validate
         if model_postfix not in ["Instruct-v0.1-AWQ", "Instruct-v0.1-GPTQ", "Instruct-v0.1"]:
@@ -60,15 +60,15 @@ class MistralAgent(Agent):
         ### NOTE: This needs to not be done if we are loading a pre-trained model
         ### Required for training: Add a value head to the model as well
         ###
-        self.model = AutoModelForCausalLMWithValueHead(
-            pretrained_model=self.model,
-            v_head_init_strategy="normal",
-            v_head_initializer_range=0.2,
-            summary_dropout_prob=None
-        )
+        # self.model = AutoModelForCausalLMWithValueHead(
+        #     pretrained_model=self.model,
+        #     v_head_init_strategy="normal",
+        #     v_head_initializer_range=0.2,
+        #     summary_dropout_prob=None
+        # )
         
         ### NOTE: Note sure if this is proper
-        self.model.is_peft_model = False if not hasattr(self.model, "is_peft_model") else self.model.is_peft_model
+        # self.model.is_peft_model = False if not hasattr(self.model, "is_peft_model") else self.model.is_peft_model
 
         ###
         ### Get tokenizer
@@ -79,7 +79,7 @@ class MistralAgent(Agent):
 
         ### MANUALLY SET PAD TOKEN
         ### NOTE: I am not sure if this is proper
-        self.tokenizer.pad_token = self.tokenizer.eos_token
+        # self.tokenizer.pad_token = self.tokenizer.eos_token
 
         ### This stuff is fine. Should be left alone here
         self.tokenizer.chat_template = "{{ bos_token }}{% for message in messages %}{% if (message['role'] == 'user') != (loop.index0 % 2 == 0) %}{{ raise_exception('Conversation roles must alternate user/assistant/user/assistant/...') }}{% endif %}{% if message['role'] == 'user' %}{{ '[INST] ' + message['content'] + ' [/INST]' }}{% elif message['role'] == 'assistant' %}{{ message['content'] + eos_token + ' ' }}{% else %}{{ raise_exception('Only user and assistant roles are supported!') }}{% endif %}{% endfor %}"
@@ -91,14 +91,27 @@ class MistralAgent(Agent):
         self.reset_chat()
 
     def reset_chat(self):
+        ###
+        ### TextWorld Prompts
+        ###
+        v1_prompt = "You are playing TextWorld. I will describe the environment. You must issue commands to play the game based on my guidance. Commands are of the form <CMD> [insert command] </CMD>."
+        v2_prompt = v1_prompt + " If you see or notice an object, try picking it up. Otherwise, search rooms and open doors to find an object."
+        v3_prompt = v2_prompt + " You can only do the following actions in your command: look, go [north, south, west, east], open, close, take, drop, lock, unlock."
+        v4_prompt = v3_prompt + " Follow the order of my commands if I give more than one."
+        v5_prompt = v1_prompt + " Follow the order of my commands exactly if I give more than command. You can only use the following verbs in your command when playing TextWorld: look, go [north, west, south, east], search an object, open, close, take, drop, lock, unlock."
+        
+        v6_prompt = v4_prompt + " Say \"goal\" to remind yourself how to win the game if you are lost. If you do not follow commands of the goal in order, you will not win the game."
+        v7_prompt = v1_prompt + " Follow the order of my commands if I give more than one. You can only do the following actions in your command: look, go [north, south, west, east], open, close, take, drop, lock, unlock."
+
         self.chat = [
             {
                 "role": "user",
-                "content": "You are playing TextWorld. I will describe the environment. You must issue commands to play the game based on my guidance. Commands are of the form <CMD> [insert command] </CMD>. If you see or notice an object, try picking it up. Otherwise, search rooms and open doors to find an object.",
+                "content": v7_prompt,
             },
             {
                 "role": "assistant",
-                "content": "I am playing TextWorld. I will issue commands based upon the environment that you describe, and I will describe my action in one sentence. Can you provide the objective?",
+                #"content": "I am playing TextWorld. I will issue commands based on the environment that you describe, and I will describe my command with a short phrase. Can you provide the objective?",
+                "content": "I am playing TextWorld. I will issue commands based on the environment that you describe, and I will describe my command with a short phrase. I will follow the tasks of the objective in the order you tell me. What is the objective?",
             },
         ]
 
@@ -145,7 +158,8 @@ class MistralAgent(Agent):
 
         ### Generate output
         if ppo_trainer is None:
-            generation_output = self.model.generate(tokens, **generate_kwargs)
+            generation_output = self.model.generate(input_ids=tokens, **generate_kwargs)
+
         ### Use PPOTrainer
         else:
             ### VERY IMPORTANT
@@ -154,4 +168,4 @@ class MistralAgent(Agent):
             generation_output = ppo_trainer.generate(tokens.squeeze(), **generate_kwargs)
 
         decoded_outputs = self._detokenize(generation_output, input_length)
-        return generation_output[:, input_length:], decoded_outputs
+        return generation_output[:, input_length:], decoded_outputs, tokens

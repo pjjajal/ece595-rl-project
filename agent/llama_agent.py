@@ -71,19 +71,27 @@ class LlamaAgent(Agent):
         self.reset_chat()
 
     def reset_chat(self):
+        ###
+        ### TextWorld Prompts
+        ###
+        v1_prompt = "You are playing TextWorld. I will describe the environment. You must issue commands to play the game based on my guidance. Commands are of the form <CMD> [insert command] </CMD>."
+        v2_prompt = v1_prompt + " If you see or notice an object, try picking it up. Otherwise, search rooms and open doors to find an object."
+        v3_prompt = v2_prompt + " You can only do the following actions in your command: look, go [north, south, west, east], open, close, take, drop, lock, unlock."
+        v4_prompt = v3_prompt + " Follow the order of my commands if I give more than one."
+        v5_prompt = v1_prompt + " Follow the order of my commands exactly if I give more than command. You can only use the following verbs in your command when playing TextWorld: look, go [north, west, south, east], search an object, open, close, take, drop, lock, unlock."
+        
+        v6_prompt = v4_prompt + " Say \"goal\" to remind yourself how to win the game if you are lost. If you do not follow commands of the goal in order, you will not win the game."
+        v7_prompt = v1_prompt + " Follow the order of my commands if I give more than one. You can only do the following actions in your command: look, go [north, south, west, east], open, close, take, drop, lock, unlock."
+
         self.chat = [
             {
                 "role": "user",
-                ### V1
-                "content": "You are playing TextWorld. I will describe the environment. You must issue commands to play the game based on my guidance. Commands are of the form <CMD> [insert command] </CMD>.",
-                ### V2
-                #"content": "You are playing TextWorld. I will describe the environment. You must issue commands to play the game based on my guidance. Commands are of the form <CMD> [insert command] </CMD>. If you see or notice an object, try picking it up. Otherwise, search rooms and open doors to find an object.",
-                ### V3
-                #"content": "You are playing TextWorld. I will describe the environment. You must issue commands to play the game based on my guidance. Commands are of the form <CMD> [insert command] </CMD>. If you see or notice an object, try picking it up. Otherwise, search rooms and open doors to find an object.",
+                "content": v7_prompt,
             },
             {
                 "role": "assistant",
-                "content": "I am playing TextWorld. I will issue commands based upon the environment that you describe, and I will describe my action in one sentence. Can you provide the objective?",
+                #"content": "I am playing TextWorld. I will issue commands based on the environment that you describe, and I will describe my command with a short phrase. Can you provide the objective?",
+                "content": "I am playing TextWorld. I will issue commands based on the environment that you describe, and I will describe my command with a short phrase. I will follow the tasks of the objective in the order you tell me. What is the objective?",
             },
         ]
 

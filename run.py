@@ -21,8 +21,8 @@ def run_episode(agent : Agent, environment, generation_kwargs) -> Tuple:
     agent.reset_chat()
 
     ### Reset environment
+    ### IGNORE initial observation which contains TextWorld ASCII art. Instead just do goal and look.
     observation, info = environment.reset()
-    ### NOTE: Setting 2nd parameter to true seems to sometimes break the model! Leaving it as false for now
     observation = sanitize_observation(observation)
 
     ### Hardcoded
