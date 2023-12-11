@@ -12,7 +12,7 @@ from .agent import Agent
 
 class MistralAgent(Agent):
     def __init__(self, version : str = "7B") -> None:
-        model_postfix : str = "Instruct-v0.1-AWQ"
+        model_postfix : str = "Instruct-v0.1-GPTQ"
 
         ### Validate
         if model_postfix not in ["Instruct-v0.1-AWQ", "Instruct-v0.1-GPTQ", "Instruct-v0.1"]:
