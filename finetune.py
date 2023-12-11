@@ -34,6 +34,8 @@ from utils import sanitize_observation, sanitize_response
 import warnings
 from pprint import pprint
 
+### Viz stuff!
+import wandb
 
 ### Helper function for tokenizing observations
 ### May need to change / modify
@@ -42,7 +44,6 @@ def tokenize_observation(agent: Agent, observation: str) -> Any:
         agent.tokenizer(observation, return_tensors="pt").input_ids.cuda().squeeze()
     )
     return tokens
-
 
 ###
 ### Run episode w/
@@ -93,7 +94,7 @@ def run_episode(
         ### Get command from agent outputs
         response = response.replace("</s>", "")
         response = re.search(pattern, response).group(1)
-        response = sanitize_response(response)
+        #response = sanitize_response(response)
 
         ### Append to response list
         batch["responses_generated"].append(generated_response_output)
@@ -119,7 +120,6 @@ def run_episode(
         agent.tokenizer.decode(r.squeeze()) for r in batch["responses_generated"]
     ]
 
-
     ### Now, consolidate batch info
     ## In particular, we want to consolidate responses_generated, and input_ids
     batch["responses_generated"] = [
@@ -136,6 +136,8 @@ def run_episode(
     return batch
 
 def main(args: argparse.Namespace):
+    wandb.init()
+
     ### Instantiate agent
     agent = AgentFactory.create(args.model, args.llama_version)
 
@@ -164,6 +166,7 @@ def main(args: argparse.Namespace):
         mini_batch_size=1,
         kl_penalty="abs",
         init_kl_coef=0.02,
+        log_with="wandb",
     )
 
     ### Create PPO Trainer
@@ -176,7 +179,7 @@ def main(args: argparse.Namespace):
     )
 
     ### Epochs
-    for e in range(100):
+    for e in range(1):
         batch = {
             "input_ids": [],
             "responses_decoded": [],
@@ -203,13 +206,14 @@ def main(args: argparse.Namespace):
         print(f"Training stats mean reward: {stats['ppo/returns/mean']}\nKL Loss: {stats['ppo/mean_non_score_reward']}")
 
     ### Really Annoying. Stole this from _save_pretrained(...) of PPOTrainer
-    # ppo_trainer.accelerator.unwrap_model(ppo_trainer.model).save_pretrained("models/")
-    # ppo_trainer.tokenizer.save_pretrained("models/")
+    #ppo_trainer.accelerator.unwrap_model(ppo_trainer.model).save_pretrained("models/")
+    ppo_trainer.model.save_pretrained("models/")
+    ppo_trainer.tokenizer.save_pretrained("models/")
 
 if __name__ == "__main__":
     parser = ArgumentParser()
-    parser.add_argument("--max-episode-steps", type=int, default=8)
-    parser.add_argument("--model", default="mistral")
+    parser.add_argument("--max-episode-steps", type=int, default=12)
+    parser.add_argument("--model", default="llama")
     parser.add_argument("--game", required=True)
     parser.add_argument("--llama-version", type=str, default="7B")
     args = parser.parse_args()
