@@ -31,12 +31,6 @@ from agent import AgentFactory
 from agent.agent import Agent
 from utils import sanitize_observation, sanitize_response
 
-import warnings
-from pprint import pprint
-
-### Viz stuff!
-import wandb
-
 ### Helper function for tokenizing observations
 ### May need to change / modify
 def tokenize_observation(agent: Agent, observation: str) -> Any:
@@ -44,6 +38,7 @@ def tokenize_observation(agent: Agent, observation: str) -> Any:
         agent.tokenizer(observation, return_tensors="pt").input_ids.cuda().squeeze()
     )
     return tokens
+
 
 ###
 ### Run episode w/
@@ -58,14 +53,17 @@ def run_episode(
     ### Emulates dataloader behavior of TRL examples
     batch = {
         "input_ids": [],
-        "responses_generated": [],
-        "observations": [],
         "responses_decoded": [],
+        "responses_generated": [],
         "reward": [],
     }
 
     ### Reset environment
     observation, info = environment.reset()
+
+    ### Record as string and tensor
+    tokenized_observation = tokenize_observation(agent, observation)
+    batch["input_ids"].append(tokenized_observation)
 
     ### Hardcoded
     pattern = r"<CMD>(.*?)<\/CMD>"
@@ -73,34 +71,34 @@ def run_episode(
     ### Data to track
     score, moves, done = 0, 0, False
 
+    ### Take the first action
+    generated_response_output, response, _ = agent.act(
+        observation, generation_kwargs, ppo_trainer
+    )
+
     while True:
         ### Increment moves!
         moves += 1
 
-        ### Check this so we don't append the final observation
-        if not done:
-            observation = sanitize_observation(observation)
-            tokenized_observation = tokenize_observation(agent, observation)
-            batch['observations'].append(observation)
-            batch["input_ids"].append(tokenized_observation)
-
-        ### Get our next response
-        generated_response_output, response, tokenized_observation = agent.act(
-            observation, generation_kwargs, ppo_trainer
-        )
-        # batch["input_ids"].append(tokenized_observation)
-
-
         ### Get command from agent outputs
         response = response.replace("</s>", "")
         response = re.search(pattern, response).group(1)
-        #response = sanitize_response(response)
 
         ### Append to response list
         batch["responses_generated"].append(generated_response_output)
 
         ### Let the environment act and sanitize the output
         observation, score, done, info = environment.step(response)
+
+        ### Check this so we don't append the final observation
+        if not done:
+            tokenized_observation = tokenize_observation(agent, observation)
+            batch["input_ids"].append(tokenized_observation)
+
+        ### Get our next response
+        generated_response_output, response, _ = agent.act(
+            observation, generation_kwargs, ppo_trainer
+        )
 
         ### Check confusion after agent acts, exit early potentially
         if done or agent.is_confused:
@@ -121,7 +119,7 @@ def run_episode(
     ]
 
     ### Now, consolidate batch info
-    ## In particular, we want to consolidate responses_generated, and input_ids
+    ### In particular, we want to consolidate responses_generated, and input_ids
     batch["responses_generated"] = [
         torch.cat(batch["responses_generated"], dim=-1).squeeze()
     ]
@@ -136,8 +134,6 @@ def run_episode(
     return batch
 
 def main(args: argparse.Namespace):
-    wandb.init()
-
     ### Instantiate agent
     agent = AgentFactory.create(args.model, args.llama_version)
 
@@ -166,7 +162,6 @@ def main(args: argparse.Namespace):
         mini_batch_size=1,
         kl_penalty="abs",
         init_kl_coef=0.02,
-        log_with="wandb",
     )
 
     ### Create PPO Trainer
@@ -179,7 +174,7 @@ def main(args: argparse.Namespace):
     )
 
     ### Epochs
-    for e in range(1):
+    for e in range(4):
         batch = {
             "input_ids": [],
             "responses_decoded": [],
@@ -190,14 +185,14 @@ def main(args: argparse.Namespace):
         ### Iteratively generate batches
         for b in range(ppo_config.batch_size):
             episode_batch = run_episode(agent, game_env, ppo_trainer, generation_kwargs)
+            print(episode_batch)
             batch["input_ids"] += episode_batch["input_ids"]
             batch["responses_decoded"] += episode_batch["responses_decoded"]
             batch["responses_generated"] += episode_batch["responses_generated"]
             batch["reward"] += episode_batch["reward"]
 
         ### Tokenize these, then pass these through the ppotrainer to update the model
-        pprint("running backward")
-        print(batch["responses_decoded"])
+        print("running backward")
         stats = ppo_trainer.step(
             batch["input_ids"], batch["responses_generated"], batch["reward"]
         )
@@ -206,14 +201,13 @@ def main(args: argparse.Namespace):
         print(f"Training stats mean reward: {stats['ppo/returns/mean']}\nKL Loss: {stats['ppo/mean_non_score_reward']}")
 
     ### Really Annoying. Stole this from _save_pretrained(...) of PPOTrainer
-    #ppo_trainer.accelerator.unwrap_model(ppo_trainer.model).save_pretrained("models/")
-    ppo_trainer.model.save_pretrained("models/")
-    ppo_trainer.tokenizer.save_pretrained("models/")
+    # ppo_trainer.accelerator.unwrap_model(ppo_trainer.model).save_pretrained("models/")
+    # ppo_trainer.tokenizer.save_pretrained("models/")
 
 if __name__ == "__main__":
     parser = ArgumentParser()
-    parser.add_argument("--max-episode-steps", type=int, default=12)
-    parser.add_argument("--model", default="llama")
+    parser.add_argument("--max-episode-steps", type=int, default=8)
+    parser.add_argument("--model", default="mistral")
     parser.add_argument("--game", required=True)
     parser.add_argument("--llama-version", type=str, default="7B")
     args = parser.parse_args()

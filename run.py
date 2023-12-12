@@ -23,7 +23,6 @@ def run_episode(agent : Agent, environment, generation_kwargs) -> Tuple:
     ### Reset environment
     ### IGNORE initial observation which contains TextWorld ASCII art. Instead just do goal and look.
     observation, info = environment.reset()
-    #observation = sanitize_observation(observation)
 
     ### Hardcoded
     pattern = r"<CMD>(.*?)<\/CMD>"
@@ -47,12 +46,10 @@ def run_episode(agent : Agent, environment, generation_kwargs) -> Tuple:
         if not args.manual_mode:
             command = command.replace("</s>", "")
             command = re.search(pattern, command).group(1)
-            #command = sanitize_response(command)
 
             print("command {}: {}".format(moves, command))
 
         observation, score, done, info = environment.step(command)
-        #observation = sanitize_observation(observation)
 
         print("observation {}: {}".format(moves, observation))
 
