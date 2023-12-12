@@ -17,3 +17,14 @@ conda activate rl-project
 
 ## Generating Games
 Games are stored in the `games` directory. To generate the treasure-hunt games run `./generate_thunt.sh`
+
+## Scripts
+### Running LlamaV2 on treasure level 1 (generated with ./generate_thunt.sh)
+```bash
+python run.py --model llama --game games/thunt_1.z8
+```
+
+### Attempting to finetune LlamaV2 on treasure level 1 (generated with ./generate_thunt.sh)
+```bash
+python run.py --model llama --game games/thunt_1.z8
+```

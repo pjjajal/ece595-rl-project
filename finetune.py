@@ -3,6 +3,7 @@ import time
 import argparse
 from typing import Dict, List, Tuple, Any
 from argparse import ArgumentParser
+import pickle
 
 ### Gym / TextWorld stuff
 import gym
@@ -31,6 +32,7 @@ from agent import AgentFactory
 from agent.agent import Agent
 from utils import sanitize_observation, sanitize_response
 
+
 ### Helper function for tokenizing observations
 ### May need to change / modify
 def tokenize_observation(agent: Agent, observation: str) -> Any:
@@ -38,7 +40,6 @@ def tokenize_observation(agent: Agent, observation: str) -> Any:
         agent.tokenizer(observation, return_tensors="pt").input_ids.cuda().squeeze()
     )
     return tokens
-
 
 ###
 ### Run episode w/
@@ -137,6 +138,11 @@ def main(args: argparse.Namespace):
     ### Instantiate agent
     agent = AgentFactory.create(args.model, args.llama_version)
 
+    ### List of mean reward
+    episodic_mean_reward_list = []
+    ### List of KL div
+    episodic_kl_div_loss_list = []
+
     ### Register a text-based game as a new Gym's environment.
     game_env_id = textworld.gym.register_game(
         args.game,
@@ -174,7 +180,7 @@ def main(args: argparse.Namespace):
     )
 
     ### Epochs
-    for e in range(4):
+    for e in range(128):
         batch = {
             "input_ids": [],
             "responses_decoded": [],
@@ -184,31 +190,41 @@ def main(args: argparse.Namespace):
 
         ### Iteratively generate batches
         for b in range(ppo_config.batch_size):
+            print(f"=== Episode {e} batch {b} ===")
             episode_batch = run_episode(agent, game_env, ppo_trainer, generation_kwargs)
-            print(episode_batch)
+            #print(episode_batch)
             batch["input_ids"] += episode_batch["input_ids"]
             batch["responses_decoded"] += episode_batch["responses_decoded"]
             batch["responses_generated"] += episode_batch["responses_generated"]
             batch["reward"] += episode_batch["reward"]
 
         ### Tokenize these, then pass these through the ppotrainer to update the model
-        print("running backward")
+        # print("running backward")
         stats = ppo_trainer.step(
             batch["input_ids"], batch["responses_generated"], batch["reward"]
         )
 
+        ### Append to the list!
+        episodic_mean_reward_list.append(stats['ppo/returns/mean'])
+        episodic_kl_div_loss_list.append(stats['ppo/mean_non_score_reward'])
+
+        ### Save list
+        torch.save(episodic_mean_reward_list, f"finetune_{args.model}_{args.profile}_episodic_mean_reward.pth")
+        torch.save(episodic_kl_div_loss_list, f"finetune_{args.model}_{args.profile}_episodic_kl_div_loss.pth")
+
         ### Stats gang
-        print(f"Training stats mean reward: {stats['ppo/returns/mean']}\nKL Loss: {stats['ppo/mean_non_score_reward']}")
+        print(f"mean reward={stats['ppo/returns/mean']}\nKL Loss={stats['ppo/mean_non_score_reward']}")
 
     ### Really Annoying. Stole this from _save_pretrained(...) of PPOTrainer
-    # ppo_trainer.accelerator.unwrap_model(ppo_trainer.model).save_pretrained("models/")
-    # ppo_trainer.tokenizer.save_pretrained("models/")
+    #ppo_trainer.accelerator.unwrap_model(ppo_trainer.model).save_pretrained("models/")
+    #ppo_trainer.tokenizer.save_pretrained("models/")
 
 if __name__ == "__main__":
     parser = ArgumentParser()
-    parser.add_argument("--max-episode-steps", type=int, default=8)
+    parser.add_argument("--max-episode-steps", type=int, default=12)
     parser.add_argument("--model", default="mistral")
     parser.add_argument("--game", required=True)
     parser.add_argument("--llama-version", type=str, default="7B")
+    parser.add_argument("--profile", type=str)
     args = parser.parse_args()
     main(args)

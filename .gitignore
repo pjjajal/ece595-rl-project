@@ -165,3 +165,5 @@ games
 
 ### Runs folder (local only, might upload later)
 runs/
+wandb/
+data/
